@@ -10,6 +10,12 @@ interface ServerInfo {
   version: string;
 }
 
+// The SDK's Server class can only be connected to one transport at a
+// time. claude.ai opens a new MCP session per conversation, so each
+// session needs its own Server instance. The caller passes a factory
+// we invoke when a new session is created.
+type ServerFactory = () => Server;
+
 // Patch transport.send() to fall back to the GET SSE stream when the POST
 // connection has closed. Adapted from mcp-grocy-api (saya6k/mcp-grocy-api)
 // which had to work around claude.ai's behaviour of closing the POST
@@ -51,7 +57,7 @@ function patchTransportSend(
 }
 
 export function startHttpServer(
-  mcpServer: Server,
+  createMcpServer: ServerFactory,
   port: number,
   info: ServerInfo,
 ): http.Server {
@@ -92,6 +98,7 @@ export function startHttpServer(
   });
 
   const transports: Record<string, StreamableHTTPServerTransport> = {};
+  const servers: Record<string, Server> = {};
   const pendingResponses: Map<string, unknown[]> = new Map();
 
   // GET /mcp — SSE channel: fallback response delivery + keepalive.
@@ -194,13 +201,18 @@ export function startHttpServer(
 
         patchTransportSend(transport, pendingResponses);
 
+        const mcpServer = createMcpServer();
         transports[newSessionId] = transport;
+        servers[newSessionId] = mcpServer;
 
         transport.onclose = () => {
           const closedId = transport?.sessionId || newSessionId;
           console.error(`[MCP] Session closed: ${closedId}`);
           delete transports[closedId];
+          const s = servers[closedId];
+          delete servers[closedId];
           pendingResponses.delete(closedId);
+          if (s) s.close().catch((err) => console.error("[MCP] server.close failed:", err));
         };
 
         await mcpServer.connect(transport);
