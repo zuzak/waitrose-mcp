@@ -16,46 +16,6 @@ interface ServerInfo {
 // we invoke when a new session is created.
 type ServerFactory = () => Server;
 
-// Patch transport.send() to fall back to the GET SSE stream when the POST
-// connection has closed. Adapted from mcp-grocy-api (saya6k/mcp-grocy-api)
-// which had to work around claude.ai's behaviour of closing the POST
-// before the response is ready, expecting responses on the GET SSE.
-function patchTransportSend(
-  transport: StreamableHTTPServerTransport,
-  pendingResponses: Map<string, unknown[]>,
-) {
-  const anyTransport = transport as any;
-  const original = anyTransport.send.bind(transport);
-  anyTransport.send = async (message: unknown, options?: unknown) => {
-    try {
-      await original(message, options);
-    } catch (error: any) {
-      if (error?.message?.includes("No connection established for request ID")) {
-        const standaloneSseId: string = anyTransport._standaloneSseStreamId;
-        const sseStream = anyTransport._streamMapping?.get(standaloneSseId);
-
-        if (sseStream && !sseStream.writableEnded) {
-          console.error("[FALLBACK] POST closed — routing response to GET SSE");
-          sseStream.write(`event: message\ndata: ${JSON.stringify(message)}\n\n`);
-          return;
-        }
-
-        const sessionId = transport.sessionId;
-        if (sessionId) {
-          console.error(`[FALLBACK] No GET SSE — buffering for session ${sessionId}`);
-          if (!pendingResponses.has(sessionId)) pendingResponses.set(sessionId, []);
-          pendingResponses.get(sessionId)!.push(message);
-          return;
-        }
-
-        console.error(`[FALLBACK] No session ID — response dropped: ${error.message}`);
-        return;
-      }
-      throw error;
-    }
-  };
-}
-
 export function startHttpServer(
   createMcpServer: ServerFactory,
   port: number,
@@ -99,9 +59,10 @@ export function startHttpServer(
 
   const transports: Record<string, StreamableHTTPServerTransport> = {};
   const servers: Record<string, Server> = {};
-  const pendingResponses: Map<string, unknown[]> = new Map();
 
-  // GET /mcp — SSE channel: fallback response delivery + keepalive.
+  // GET /mcp — SSE keepalive channel. With enableJsonResponse: true the SDK
+  // returns JSON on POST and rarely uses this path; we keep it open for
+  // protocol compliance and send pings to hold the connection.
   app.get("/mcp", (req: Request, res: Response) => {
     const sessionId = req.headers["mcp-session-id"] as string | undefined;
     if (!sessionId) {
@@ -109,8 +70,7 @@ export function startHttpServer(
       return;
     }
 
-    const transport = transports[sessionId];
-    if (!transport) {
+    if (!transports[sessionId]) {
       res.status(404).json({ error: `Session not found: ${sessionId}` });
       return;
     }
@@ -121,34 +81,11 @@ export function startHttpServer(
     res.setHeader("Mcp-Session-Id", sessionId);
     res.flushHeaders();
 
-    const anyTransport = transport as any;
-    const standaloneSseId: string = anyTransport._standaloneSseStreamId;
-    if (standaloneSseId) {
-      anyTransport._streamMapping?.set(standaloneSseId, res);
-    }
-
-    const pending = pendingResponses.get(sessionId);
-    if (pending?.length) {
-      console.error(`[FALLBACK] Flushing ${pending.length} buffered response(s)`);
-      for (const message of pending) {
-        if (!res.writableEnded) {
-          res.write(`event: message\ndata: ${JSON.stringify(message)}\n\n`);
-        }
-      }
-      pendingResponses.delete(sessionId);
-    }
-
     const keepalive = setInterval(() => {
       if (!res.writableEnded) res.write(": ping\n\n");
     }, 30000);
 
-    res.on("close", () => {
-      clearInterval(keepalive);
-      if (standaloneSseId) {
-        const current = anyTransport._streamMapping?.get(standaloneSseId);
-        if (current === res) anyTransport._streamMapping?.delete(standaloneSseId);
-      }
-    });
+    res.on("close", () => clearInterval(keepalive));
   });
 
   // POST /mcp — main request channel (streamable HTTP transport).
@@ -199,8 +136,6 @@ export function startHttpServer(
           enableJsonResponse: true,
         });
 
-        patchTransportSend(transport, pendingResponses);
-
         const mcpServer = createMcpServer();
         transports[newSessionId] = transport;
         servers[newSessionId] = mcpServer;
@@ -211,7 +146,6 @@ export function startHttpServer(
           delete transports[closedId];
           const s = servers[closedId];
           delete servers[closedId];
-          pendingResponses.delete(closedId);
           if (s) s.close().catch((err) => console.error("[MCP] server.close failed:", err));
         };
 
