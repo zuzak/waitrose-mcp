@@ -42,6 +42,8 @@ export function startHttpServer(
     }),
   );
 
+  // /metrics is unauthenticated — acceptable while the service is cluster-internal
+  // only. If this service is ever exposed via ingress, add access control here.
   app.get("/metrics", async (_req: Request, res: Response) => {
     try {
       const metrics = await registry.metrics();
