@@ -29,7 +29,9 @@ export const sessionAuthenticated = new Gauge({
   registers: [registry],
 });
 
-// Expose counter for reauth events (used by auth resilience issue)
+// Pre-registered for auth resilience (issue #7 / PR #15) — incremented in
+// waitrose.ts once that branch merges. Declared here so the metric exists
+// in /metrics at zero-value from startup even before a reauth occurs.
 export const reauthsTotal = new Counter({
   name: "waitrose_mcp_reauths_total",
   help: "Total re-authentication attempts",

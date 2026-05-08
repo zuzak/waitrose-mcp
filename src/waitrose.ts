@@ -1030,9 +1030,11 @@ export class WaitroseClient {
 
     if (!response.ok) {
       const text = await response.text();
+      upstreamCallsTotal.inc({ outcome: "error" });
       throw new Error(`HTTP ${response.status}: ${text}`);
     }
 
+    upstreamCallsTotal.inc({ outcome: "ok" });
     const result = await response.json() as { products?: ProductDetail[] };
     return result.products || [];
   }
