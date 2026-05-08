@@ -1006,6 +1006,8 @@ export class WaitroseClient {
       return [];
     }
 
+    await this.rateLimiter.acquire();
+
     // Join line numbers with + as per the API format
     const lineNumbersParam = lineNumbers.join("+");
     const url = `${PRODUCTS_API_URL}/${lineNumbersParam}`;
