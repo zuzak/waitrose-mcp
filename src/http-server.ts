@@ -4,6 +4,7 @@ import express, { type Request, type Response } from "express";
 import cors from "cors";
 import http from "node:http";
 import { randomUUID } from "node:crypto";
+import { registry } from "./metrics.js";
 
 interface ServerInfo {
   name: string;
@@ -40,6 +41,18 @@ export function startHttpServer(
       optionsSuccessStatus: 200,
     }),
   );
+
+  // /metrics is unauthenticated — acceptable while the service is cluster-internal
+  // only. If this service is ever exposed via ingress, add access control here.
+  app.get("/metrics", async (_req: Request, res: Response) => {
+    try {
+      const metrics = await registry.metrics();
+      res.setHeader("Content-Type", registry.contentType);
+      res.send(metrics);
+    } catch (err) {
+      res.status(500).send("Failed to collect metrics");
+    }
+  });
 
   // Dedicated healthz endpoint for k8s probes and meaningful curl checks.
   // The MCP endpoint at /mcp cannot serve a plain GET probe — it opens an

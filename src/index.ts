@@ -8,6 +8,8 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import WaitroseClient from "./waitrose.js";
 import { startHttpServer } from "./http-server.js";
+import { toolCallsTotal, toolCallDuration, sessionAuthenticated } from "./metrics.js";
+import { redactArgs, auditLog } from "./audit.js";
 
 const VERSION = "0.1.0";
 const SERVER_NAME = "waitrose-mcp";
@@ -31,12 +33,14 @@ const password = process.env.WAITROSE_PASSWORD;
 if (username && password) {
   try {
     await client.login(username, password);
+    sessionAuthenticated.set(1);
     console.error(`[INIT] Authenticated as ${username}`);
   } catch (err) {
     console.error("[INIT] Login failed:", err);
     process.exit(1);
   }
 } else {
+  sessionAuthenticated.set(0);
   console.error("[INIT] Running anonymously (no WAITROSE_USERNAME/WAITROSE_PASSWORD)");
 }
 
@@ -205,22 +209,44 @@ function createMcpServer(): Server {
   }));
 
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
+    const toolName = request.params.name;
     const args = (request.params.arguments ?? {}) as Record<string, unknown>;
+    const sessionId = (request as any)._meta?.sessionId ?? "unknown";
+    const startMs = Date.now();
+    const endTimer = toolCallDuration.startTimer({ tool: toolName });
+
+    const finish = (outcome: "ok" | "error" | "denied", errorMsg?: string) => {
+      endTimer();
+      toolCallsTotal.inc({ tool: toolName, outcome });
+      auditLog({
+        audit: true,
+        ts: new Date().toISOString(),
+        session: sessionId,
+        tool: toolName,
+        args: redactArgs(toolName, args),
+        outcome,
+        duration_ms: Date.now() - startMs,
+        ...(errorMsg ? { error: errorMsg } : {}),
+      });
+    };
 
     try {
-      switch (request.params.name) {
+      let result: { content: Array<{ type: string; text: string }> };
+
+      switch (toolName) {
         case "search_products": {
           const query = args.query;
           if (typeof query !== "string" || !query) {
             throw new McpError(ErrorCode.InvalidParams, "query is required");
           }
-          const result = await client.searchProducts(query, {
+          const data = await client.searchProducts(query, {
             sortBy: args.sortBy as any,
             size: args.size as number | undefined,
             start: args.start as number | undefined,
             filterTags: args.filterTags as any,
           });
-          return { content: [{ type: "text", text: safeJson(result) }] };
+          result = { content: [{ type: "text", text: safeJson(data) }] };
+          break;
         }
 
         case "browse_products": {
@@ -228,12 +254,13 @@ function createMcpServer(): Server {
           if (typeof category !== "string" || !category) {
             throw new McpError(ErrorCode.InvalidParams, "category is required");
           }
-          const result = await client.browseProducts(category, {
+          const data = await client.browseProducts(category, {
             sortBy: args.sortBy as any,
             size: args.size as number | undefined,
             start: args.start as number | undefined,
           });
-          return { content: [{ type: "text", text: safeJson(result) }] };
+          result = { content: [{ type: "text", text: safeJson(data) }] };
+          break;
         }
 
         case "get_products_by_line_numbers": {
@@ -248,10 +275,9 @@ function createMcpServer(): Server {
               "lineNumbers must be a non-empty array of strings",
             );
           }
-          const result = await client.getProductsByLineNumbers(
-            lineNumbers as string[],
-          );
-          return { content: [{ type: "text", text: safeJson(result) }] };
+          const data = await client.getProductsByLineNumbers(lineNumbers as string[]);
+          result = { content: [{ type: "text", text: safeJson(data) }] };
+          break;
         }
 
         case "get_promotion_products": {
@@ -262,24 +288,32 @@ function createMcpServer(): Server {
               "promotionId is required",
             );
           }
-          const result = await client.getPromotionProducts(promotionId, {
+          const data = await client.getPromotionProducts(promotionId, {
             sortBy: args.sortBy as any,
             size: args.size as number | undefined,
             start: args.start as number | undefined,
           });
-          return { content: [{ type: "text", text: safeJson(result) }] };
+          result = { content: [{ type: "text", text: safeJson(data) }] };
+          break;
         }
 
         default:
           throw new McpError(
             ErrorCode.MethodNotFound,
-            `Unknown tool: ${request.params.name}`,
+            `Unknown tool: ${toolName}`,
           );
       }
+
+      finish("ok");
+      return result;
     } catch (err) {
-      if (err instanceof McpError) throw err;
+      if (err instanceof McpError) {
+        finish("error", err.message);
+        throw err;
+      }
       const msg = err instanceof Error ? err.message : String(err);
-      console.error(`[ERROR] Tool ${request.params.name} failed:`, msg);
+      console.error(`[ERROR] Tool ${toolName} failed:`, msg);
+      finish("error", msg);
       return toolError(msg);
     }
   });

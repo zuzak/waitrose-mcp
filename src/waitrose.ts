@@ -1,7 +1,9 @@
+import { upstreamCallsTotal } from "./metrics.js";
+
 /**
  * Waitrose API Client
- * 
- * A dependency-free TypeScript client for the Waitrose grocery API.
+ *
+ * TypeScript client for the Waitrose grocery API.
  * Reverse-engineered from the Waitrose Android app v3.9.1.
  * 
  * Usage:
@@ -497,15 +499,18 @@ export class WaitroseClient {
 
     if (!response.ok) {
       const text = await response.text();
+      upstreamCallsTotal.inc({ outcome: "error" });
       throw new Error(`HTTP ${response.status}: ${text}`);
     }
 
     const json = await response.json() as GraphQLResponse<T>;
-    
+
     if (json.errors?.length) {
+      upstreamCallsTotal.inc({ outcome: "error" });
       throw new Error(`GraphQL Error: ${json.errors.map(e => e.message).join(", ")}`);
     }
 
+    upstreamCallsTotal.inc({ outcome: "ok" });
     return json as T;
   }
 
@@ -535,6 +540,7 @@ export class WaitroseClient {
 
     if (!response.ok) {
       const text = await response.text();
+      upstreamCallsTotal.inc({ outcome: "error" });
       throw new Error(`HTTP ${response.status}: ${text}`);
     }
 
@@ -555,6 +561,7 @@ export class WaitroseClient {
       }
     }
 
+    upstreamCallsTotal.inc({ outcome: "ok" });
     return {
       products,
       totalMatches: raw.totalMatches,
@@ -1023,9 +1030,11 @@ export class WaitroseClient {
 
     if (!response.ok) {
       const text = await response.text();
+      upstreamCallsTotal.inc({ outcome: "error" });
       throw new Error(`HTTP ${response.status}: ${text}`);
     }
 
+    upstreamCallsTotal.inc({ outcome: "ok" });
     const result = await response.json() as { products?: ProductDetail[] };
     return result.products || [];
   }
