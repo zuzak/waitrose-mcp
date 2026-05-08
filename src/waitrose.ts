@@ -1,4 +1,5 @@
 import { upstreamCallsTotal } from "./metrics.js";
+import { TokenBucket, rateLimiterFromEnv } from "./rate-limiter.js";
 
 /**
  * Waitrose API Client
@@ -479,9 +480,15 @@ export class WaitroseClient {
   private customerId: string | null = null;
   private customerOrderId: string | null = null;
   private defaultBranchId: string | null = null;
+  private readonly rateLimiter: TokenBucket;
+
+  constructor(rateLimiter?: TokenBucket) {
+    this.rateLimiter = rateLimiter ?? rateLimiterFromEnv();
+  }
 
   /** Execute a GraphQL query/mutation */
   private async graphql<T>(query: string, variables: Record<string, unknown> = {}): Promise<T> {
+    await this.rateLimiter.acquire();
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
       "Accept": "application/json",
@@ -519,6 +526,7 @@ export class WaitroseClient {
     endpoint: "search" | "browse",
     body: Record<string, unknown>
   ): Promise<SearchResponse> {
+    await this.rateLimiter.acquire();
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
       "Accept": "application/json",
