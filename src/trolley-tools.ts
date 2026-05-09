@@ -36,7 +36,20 @@ function summarise(r: TrolleyResponse): TrolleyToolResponse {
     minimumSpendThresholdMet: r.trolley.trolleyTotals.minimumSpendThresholdMet ?? null,
     failures: r.failures ?? [],
   };
-  return { summary, ...r };
+  return { ...r, summary };
+}
+
+const VALID_UOMS = new Set<UnitOfMeasure>(["C62", "KGM", "GRM"]);
+
+function validateUom(value: unknown, context: string): UnitOfMeasure {
+  if (value === undefined) return "C62";
+  if (typeof value !== "string" || !VALID_UOMS.has(value as UnitOfMeasure)) {
+    throw new McpError(
+      ErrorCode.InvalidParams,
+      `${context}: uom must be one of C62, KGM, GRM`,
+    );
+  }
+  return value as UnitOfMeasure;
 }
 
 export type TrolleyToolName =
@@ -74,7 +87,7 @@ function parseAddToTrolley(args: Record<string, unknown>): {
 } {
   const lineNumber = args.lineNumber;
   const quantity = (args.quantity as number | undefined) ?? 1;
-  const uom = (args.uom as UnitOfMeasure | undefined) ?? "C62";
+  const uom = validateUom(args.uom, "add_to_trolley");
   if (typeof lineNumber !== "string" || !lineNumber) {
     throw new McpError(ErrorCode.InvalidParams, "lineNumber is required");
   }
@@ -105,7 +118,7 @@ function parseUpdateItems(args: Record<string, unknown>): TrolleyItemInput[] {
     const obj = raw as Record<string, unknown>;
     const ln = obj.lineNumber;
     const qty = obj.quantity;
-    const uom = (obj.uom as UnitOfMeasure | undefined) ?? "C62";
+    const uom = validateUom(obj.uom, `items[${idx}]`);
     if (typeof ln !== "string" || !ln) {
       throw new McpError(
         ErrorCode.InvalidParams,

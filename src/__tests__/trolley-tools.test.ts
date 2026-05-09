@@ -194,6 +194,16 @@ describe("dispatchTrolleyTool — add_to_trolley", () => {
     ).rejects.toBeInstanceOf(McpError);
   });
 
+  it("rejects uom outside the C62/KGM/GRM enum", async () => {
+    await expect(
+      dispatchTrolleyTool(asClient(client), "add_to_trolley", {
+        lineNumber: "ln1",
+        quantity: 1,
+        uom: "PIECE",
+      }),
+    ).rejects.toBeInstanceOf(McpError);
+  });
+
   it("default quantity 1, default uom C62 — succeeds", async () => {
     client.getTrolley.mockResolvedValueOnce(makeTrolley(0, 0));
     await dispatchTrolleyTool(asClient(client), "add_to_trolley", {
@@ -298,6 +308,14 @@ describe("dispatchTrolleyTool — update_trolley_items", () => {
     await expect(
       dispatchTrolleyTool(asClient(client), "update_trolley_items", {
         items: "nope",
+      }),
+    ).rejects.toBeInstanceOf(McpError);
+  });
+
+  it("rejects items[].uom outside the enum", async () => {
+    await expect(
+      dispatchTrolleyTool(asClient(client), "update_trolley_items", {
+        items: [{ lineNumber: "ln1", quantity: 1, uom: "PIECE" }],
       }),
     ).rejects.toBeInstanceOf(McpError);
   });
