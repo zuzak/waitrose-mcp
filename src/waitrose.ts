@@ -1,4 +1,5 @@
-import { upstreamCallsTotal } from "./metrics.js";
+import { upstreamCallsTotal, reauthsTotal } from "./metrics.js";
+import { auditLog } from "./audit.js";
 import { TokenBucket, rateLimiterFromEnv } from "./rate-limiter.js";
 
 /**
@@ -23,6 +24,14 @@ const CLIENT_ID = "ANDROID_APP";
 // "Authorization: Bearer unauthenticated". We inject that when no access token
 // is set.
 const ANONYMOUS_BEARER = "unauthenticated";
+
+/** Thrown specifically on HTTP 401 so callers can detect auth failures. */
+class AuthError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "AuthError";
+  }
+}
 
 // ============================================================================
 // GraphQL Operations
@@ -481,14 +490,35 @@ export class WaitroseClient {
   private customerOrderId: string | null = null;
   private defaultBranchId: string | null = null;
   private readonly rateLimiter: TokenBucket;
+  private _storedUsername: string | null = null;
+  private _storedPassword: string | null = null;
 
   constructor(rateLimiter?: TokenBucket) {
     this.rateLimiter = rateLimiter ?? rateLimiterFromEnv();
   }
 
-  /** Execute a GraphQL query/mutation */
-  private async graphql<T>(query: string, variables: Record<string, unknown> = {}): Promise<T> {
-    await this.rateLimiter.acquire();
+  /**
+   * Re-authenticate once after a 401. Increments `waitrose_mcp_reauths_total`
+   * and emits an audit entry. Only called when credentials are available.
+   */
+  private async _handleReauth(ts: string): Promise<void> {
+    if (!this._storedUsername || !this._storedPassword) {
+      throw new Error("No stored credentials for re-authentication");
+    }
+    const start = Date.now();
+    try {
+      await this.login(this._storedUsername, this._storedPassword);
+      reauthsTotal.inc({ outcome: "ok" });
+      auditLog({ audit: true, ts, session: "client", tool: "_reauth", args: {}, outcome: "ok", duration_ms: Date.now() - start });
+    } catch (err) {
+      reauthsTotal.inc({ outcome: "error" });
+      auditLog({ audit: true, ts, session: "client", tool: "_reauth", args: {}, outcome: "error", duration_ms: Date.now() - start, error: err instanceof Error ? err.message : String(err) });
+      throw err;
+    }
+  }
+
+  /** Execute a GraphQL query/mutation — throws AuthError on 401 */
+  private async graphqlOnce<T>(query: string, variables: Record<string, unknown> = {}): Promise<T> {
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
       "Accept": "application/json",
@@ -507,6 +537,7 @@ export class WaitroseClient {
     if (!response.ok) {
       const text = await response.text();
       upstreamCallsTotal.inc({ outcome: "error" });
+      if (response.status === 401) throw new AuthError(`HTTP 401: ${text}`);
       throw new Error(`HTTP ${response.status}: ${text}`);
     }
 
@@ -521,12 +552,24 @@ export class WaitroseClient {
     return json as T;
   }
 
-  /** Execute a REST API call to the content/search API */
-  private async restApi(
+  private async graphql<T>(query: string, variables: Record<string, unknown> = {}): Promise<T> {
+    await this.rateLimiter.acquire();
+    try {
+      return await this.graphqlOnce<T>(query, variables);
+    } catch (err) {
+      if (err instanceof AuthError && this._storedUsername && this._storedPassword) {
+        await this._handleReauth(new Date().toISOString());
+        return this.graphqlOnce<T>(query, variables);
+      }
+      throw err;
+    }
+  }
+
+  /** Execute a REST API call to the content/search API — throws AuthError on 401 */
+  private async restApiOnce(
     endpoint: "search" | "browse",
     body: Record<string, unknown>
   ): Promise<SearchResponse> {
-    await this.rateLimiter.acquire();
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
       "Accept": "application/json",
@@ -549,6 +592,7 @@ export class WaitroseClient {
     if (!response.ok) {
       const text = await response.text();
       upstreamCallsTotal.inc({ outcome: "error" });
+      if (response.status === 401) throw new AuthError(`HTTP 401: ${text}`);
       throw new Error(`HTTP ${response.status}: ${text}`);
     }
 
@@ -576,13 +620,30 @@ export class WaitroseClient {
     };
   }
 
+  private async restApi(
+    endpoint: "search" | "browse",
+    body: Record<string, unknown>
+  ): Promise<SearchResponse> {
+    await this.rateLimiter.acquire();
+    try {
+      return await this.restApiOnce(endpoint, body);
+    } catch (err) {
+      if (err instanceof AuthError && this._storedUsername && this._storedPassword) {
+        await this._handleReauth(new Date().toISOString());
+        return this.restApiOnce(endpoint, body);
+      }
+      throw err;
+    }
+  }
+
   // ==========================================================================
   // Session Management
   // ==========================================================================
 
   /** Log in with username and password */
   async login(username: string, password: string): Promise<Session> {
-    const result = await this.graphql<{ data: { generateSession: Session & { failures: ApiFailure[] | null } } }>(
+    // Use graphqlOnce directly — avoid triggering re-auth loop during login itself.
+    const result = await this.graphqlOnce<{ data: { generateSession: Session & { failures: ApiFailure[] | null } } }>(
       QUERIES.NewSession,
       { input: { username, password, clientId: CLIENT_ID } }
     );
@@ -597,6 +658,8 @@ export class WaitroseClient {
     this.customerId = session.customerId;
     this.customerOrderId = session.customerOrderId;
     this.defaultBranchId = session.defaultBranchId;
+    this._storedUsername = username;
+    this._storedPassword = password;
 
     return session;
   }
@@ -1001,14 +1064,7 @@ export class WaitroseClient {
    * console.log(products[0].name); // "Waitrose Organic Milk 2 Pints"
    * ```
    */
-  async getProductsByLineNumbers(lineNumbers: string[]): Promise<ProductDetail[]> {
-    if (lineNumbers.length === 0) {
-      return [];
-    }
-
-    await this.rateLimiter.acquire();
-
-    // Join line numbers with + as per the API format
+  private async _fetchProductsByLineNumbersOnce(lineNumbers: string[]): Promise<ProductDetail[]> {
     const lineNumbersParam = lineNumbers.join("+");
     const url = `${PRODUCTS_API_URL}/${lineNumbersParam}`;
 
@@ -1041,12 +1097,29 @@ export class WaitroseClient {
     if (!response.ok) {
       const text = await response.text();
       upstreamCallsTotal.inc({ outcome: "error" });
+      if (response.status === 401) throw new AuthError(`HTTP 401: ${text}`);
       throw new Error(`HTTP ${response.status}: ${text}`);
     }
 
     upstreamCallsTotal.inc({ outcome: "ok" });
     const result = await response.json() as { products?: ProductDetail[] };
     return result.products || [];
+  }
+
+  async getProductsByLineNumbers(lineNumbers: string[]): Promise<ProductDetail[]> {
+    if (lineNumbers.length === 0) {
+      return [];
+    }
+    await this.rateLimiter.acquire();
+    try {
+      return await this._fetchProductsByLineNumbersOnce(lineNumbers);
+    } catch (err) {
+      if (err instanceof AuthError && this._storedUsername && this._storedPassword) {
+        await this._handleReauth(new Date().toISOString());
+        return this._fetchProductsByLineNumbersOnce(lineNumbers);
+      }
+      throw err;
+    }
   }
 
   /**
