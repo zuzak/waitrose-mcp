@@ -10,6 +10,9 @@ import WaitroseClient from "./waitrose.js";
 import { startHttpServer } from "./http-server.js";
 import { toolCallsTotal, toolCallDuration, sessionAuthenticated } from "./metrics.js";
 import { redactArgs, auditLog } from "./audit.js";
+import { CapError } from "./safety.js";
+import { DeniedError } from "./rate-limiter.js";
+import { dispatchTrolleyTool, isTrolleyTool } from "./trolley-tools.js";
 
 const VERSION = "0.1.0";
 const SERVER_NAME = "waitrose-mcp";
@@ -205,6 +208,87 @@ function createMcpServer(): Server {
           required: ["promotionId"],
         },
       },
+      {
+        name: "get_trolley",
+        description:
+          "Get the current trolley (basket) — items, totals, and whether the £40 minimum-spend threshold is met. Requires authentication.",
+        inputSchema: { type: "object", properties: {} },
+      },
+      {
+        name: "add_to_trolley",
+        description:
+          "Add a single product (by Waitrose line number) to the active trolley. Returns the updated trolley state. Requires authentication. Refused if quantity meets WAITROSE_MAX_QTY_PER_LINE, or if pre-state basket totals meet the configured caps.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            lineNumber: {
+              type: "string",
+              description: "Waitrose product line number",
+            },
+            quantity: {
+              type: "number",
+              description: "Quantity to set on this line (replacement, not delta). Default: 1",
+            },
+            uom: {
+              type: "string",
+              enum: ["C62", "KGM", "GRM"],
+              description: "Unit of measure: C62 (each, default), KGM (kilograms), GRM (grams)",
+            },
+          },
+          required: ["lineNumber"],
+        },
+      },
+      {
+        name: "remove_from_trolley",
+        description:
+          "Remove a single line from the active trolley. Returns the updated trolley state. Requires authentication.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            lineNumber: {
+              type: "string",
+              description: "Waitrose product line number to remove",
+            },
+          },
+          required: ["lineNumber"],
+        },
+      },
+      {
+        name: "update_trolley_items",
+        description:
+          "Bulk update trolley lines — set quantity (0 to remove) for one or more line numbers in a single call. Replacement semantics, not additive. Requires authentication. Refused if any input quantity meets WAITROSE_MAX_QTY_PER_LINE, or if pre-state basket totals meet the configured caps.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            items: {
+              type: "array",
+              description: "List of items to set on the trolley",
+              items: {
+                type: "object",
+                properties: {
+                  lineNumber: { type: "string" },
+                  quantity: { type: "number", description: "Set 0 to remove the line" },
+                  uom: {
+                    type: "string",
+                    enum: ["C62", "KGM", "GRM"],
+                    description: "Default: C62",
+                  },
+                  noteToShopper: { type: "string" },
+                  canSubstitute: { type: "boolean" },
+                },
+                required: ["lineNumber", "quantity"],
+              },
+            },
+          },
+          required: ["items"],
+        },
+      },
+      {
+        name: "empty_trolley",
+        description:
+          "Empty the entire trolley. Returns the (now empty) trolley state. Requires authentication.",
+        inputSchema: { type: "object", properties: {} },
+      },
     ],
   }));
 
@@ -226,7 +310,8 @@ function createMcpServer(): Server {
         args: redactArgs(toolName, args),
         outcome,
         duration_ms: Date.now() - startMs,
-        ...(errorMsg ? { error: errorMsg } : {}),
+        ...(errorMsg && outcome === "denied" ? { denied: errorMsg } : {}),
+        ...(errorMsg && outcome === "error" ? { error: errorMsg } : {}),
       });
     };
 
@@ -298,6 +383,11 @@ function createMcpServer(): Server {
         }
 
         default:
+          if (isTrolleyTool(toolName)) {
+            const data = await dispatchTrolleyTool(client, toolName, args);
+            result = { content: [{ type: "text", text: safeJson(data) }] };
+            break;
+          }
           throw new McpError(
             ErrorCode.MethodNotFound,
             `Unknown tool: ${toolName}`,
@@ -310,6 +400,11 @@ function createMcpServer(): Server {
       if (err instanceof McpError) {
         finish("error", err.message);
         throw err;
+      }
+      if (err instanceof CapError || err instanceof DeniedError) {
+        const msg = err.message;
+        finish("denied", msg);
+        return toolError(msg);
       }
       const msg = err instanceof Error ? err.message : String(err);
       console.error(`[ERROR] Tool ${toolName} failed:`, msg);

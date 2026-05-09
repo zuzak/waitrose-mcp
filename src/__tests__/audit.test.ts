@@ -46,6 +46,71 @@ describe("redactArgs", () => {
     expect(result.query).toBe("<redacted>");
     expect(result.count).toBe("<redacted>");
   });
+
+  describe("trolley tools", () => {
+    it("passes through allowlisted fields for add_to_trolley", () => {
+      const result = redactArgs("add_to_trolley", {
+        lineNumber: "ln-1",
+        quantity: 2,
+        uom: "C62",
+      });
+      expect(result.lineNumber).toBe("ln-1");
+      expect(result.quantity).toBe(2);
+      expect(result.uom).toBe("C62");
+    });
+
+    it("redacts unknown fields for add_to_trolley", () => {
+      const result = redactArgs("add_to_trolley", {
+        lineNumber: "ln-1",
+        secretField: "boo",
+      });
+      expect(result.lineNumber).toBe("ln-1");
+      expect(result.secretField).toBe("<redacted>");
+    });
+
+    it("deep-redacts unknown nested fields on update_trolley_items.items", () => {
+      const result = redactArgs("update_trolley_items", {
+        items: [
+          { lineNumber: "ln-1", quantity: 2, uom: "C62", secret: "leak" },
+          { lineNumber: "ln-2", quantity: 0, uom: "C62" },
+        ],
+      });
+      expect(result.items).toEqual([
+        { lineNumber: "ln-1", quantity: 2, uom: "C62", secret: "<redacted>" },
+        { lineNumber: "ln-2", quantity: 0, uom: "C62" },
+      ]);
+    });
+
+    it("preserves allowed nested fields noteToShopper and canSubstitute", () => {
+      const result = redactArgs("update_trolley_items", {
+        items: [
+          {
+            lineNumber: "ln-1",
+            quantity: 1,
+            uom: "C62",
+            noteToShopper: "ripe please",
+            canSubstitute: false,
+          },
+        ],
+      });
+      expect(result.items).toEqual([
+        {
+          lineNumber: "ln-1",
+          quantity: 1,
+          uom: "C62",
+          noteToShopper: "ripe please",
+          canSubstitute: false,
+        },
+      ]);
+    });
+
+    it("get_trolley and empty_trolley accept no args; redact any passed", () => {
+      expect(redactArgs("get_trolley", { spurious: "x" })).toEqual({
+        spurious: "<redacted>",
+      });
+      expect(redactArgs("empty_trolley", {})).toEqual({});
+    });
+  });
 });
 
 describe("auditLog", () => {
