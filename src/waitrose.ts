@@ -1067,7 +1067,7 @@ export class WaitroseClient {
    * ```
    */
   private async _fetchProductsByLineNumbersOnce(lineNumbers: string[]): Promise<ProductDetail[]> {
-    const lineNumbersParam = lineNumbers.join("+");
+    const lineNumbersParam = lineNumbers.map(encodeURIComponent).join("+");
     const url = `${PRODUCTS_API_URL}/${lineNumbersParam}`;
 
     const params: Record<string, string> = {
