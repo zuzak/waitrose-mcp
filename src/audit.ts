@@ -4,7 +4,37 @@ const SAFE_ARGS: Record<string, Set<string>> = {
   browse_products: new Set(["category", "sortBy", "size", "start"]),
   get_products_by_line_numbers: new Set(["lineNumbers"]),
   get_promotion_products: new Set(["promotionId", "sortBy", "size", "start"]),
+  get_trolley: new Set([]),
+  add_to_trolley: new Set(["lineNumber", "quantity", "uom"]),
+  remove_from_trolley: new Set(["lineNumber"]),
+  update_trolley_items: new Set(["items"]),
+  empty_trolley: new Set([]),
 };
+
+/**
+ * For top-level fields whose values are arrays of objects, an allowlist of
+ * keys to retain on each element. Anything else on each element is redacted.
+ */
+const SAFE_ITEM_FIELDS: Record<string, Record<string, Set<string>>> = {
+  update_trolley_items: {
+    items: new Set(["lineNumber", "quantity", "uom", "noteToShopper", "canSubstitute"]),
+  },
+};
+
+function redactArrayElements(
+  arr: unknown,
+  allow: Set<string>,
+): unknown {
+  if (!Array.isArray(arr)) return "<redacted>";
+  return arr.map((el) => {
+    if (el === null || typeof el !== "object" || Array.isArray(el)) return "<redacted>";
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(el as Record<string, unknown>)) {
+      out[k] = allow.has(k) ? v : "<redacted>";
+    }
+    return out;
+  });
+}
 
 /** Returns a copy of args with any field not on the allowlist redacted. */
 export function redactArgs(
@@ -17,12 +47,15 @@ export function redactArgs(
     return Object.fromEntries(Object.keys(args).map((k) => [k, "<redacted>"]));
   }
 
+  const nested = SAFE_ITEM_FIELDS[toolName];
   const result: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(args)) {
-    // Safe top-level fields pass through as-is (including nested objects/arrays).
-    // Redaction only applies at the top level — nested field allowlists can be
-    // added per-tool in SAFE_ARGS if needed in future.
-    result[key] = safe.has(key) ? value : "<redacted>";
+    if (!safe.has(key)) {
+      result[key] = "<redacted>";
+      continue;
+    }
+    const allow = nested?.[key];
+    result[key] = allow ? redactArrayElements(value, allow) : value;
   }
   return result;
 }

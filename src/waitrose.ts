@@ -179,6 +179,7 @@ export interface TrolleyTotals {
   deliveryCharge: Price | null;
   savingsFromOffers: Price | null;
   savingsFromMyWaitrose: Price | null;
+  minimumSpendThresholdMet?: boolean;
 }
 
 export interface Trolley {
