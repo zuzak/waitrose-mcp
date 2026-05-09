@@ -499,13 +499,14 @@ export class WaitroseClient {
     if (!this._storedUsername || !this._storedPassword) {
       throw new Error("No stored credentials for re-authentication");
     }
+    const start = Date.now();
     try {
       await this.login(this._storedUsername, this._storedPassword);
       reauthsTotal.inc({ outcome: "ok" });
-      auditLog({ audit: true, ts, session: "client", tool: "_reauth", args: {}, outcome: "ok", duration_ms: 0 });
+      auditLog({ audit: true, ts, session: "client", tool: "_reauth", args: {}, outcome: "ok", duration_ms: Date.now() - start });
     } catch (err) {
       reauthsTotal.inc({ outcome: "error" });
-      auditLog({ audit: true, ts, session: "client", tool: "_reauth", args: {}, outcome: "error", duration_ms: 0, error: err instanceof Error ? err.message : String(err) });
+      auditLog({ audit: true, ts, session: "client", tool: "_reauth", args: {}, outcome: "error", duration_ms: Date.now() - start, error: err instanceof Error ? err.message : String(err) });
       throw err;
     }
   }
@@ -1055,12 +1056,7 @@ export class WaitroseClient {
    * console.log(products[0].name); // "Waitrose Organic Milk 2 Pints"
    * ```
    */
-  async getProductsByLineNumbers(lineNumbers: string[]): Promise<ProductDetail[]> {
-    if (lineNumbers.length === 0) {
-      return [];
-    }
-
-    // Join line numbers with + as per the API format
+  private async _fetchProductsByLineNumbersOnce(lineNumbers: string[]): Promise<ProductDetail[]> {
     const lineNumbersParam = lineNumbers.join("+");
     const url = `${PRODUCTS_API_URL}/${lineNumbersParam}`;
 
@@ -1093,12 +1089,28 @@ export class WaitroseClient {
     if (!response.ok) {
       const text = await response.text();
       upstreamCallsTotal.inc({ outcome: "error" });
+      if (response.status === 401) throw new AuthError(`HTTP 401: ${text}`);
       throw new Error(`HTTP ${response.status}: ${text}`);
     }
 
     upstreamCallsTotal.inc({ outcome: "ok" });
     const result = await response.json() as { products?: ProductDetail[] };
     return result.products || [];
+  }
+
+  async getProductsByLineNumbers(lineNumbers: string[]): Promise<ProductDetail[]> {
+    if (lineNumbers.length === 0) {
+      return [];
+    }
+    try {
+      return await this._fetchProductsByLineNumbersOnce(lineNumbers);
+    } catch (err) {
+      if (err instanceof AuthError && this._storedUsername && this._storedPassword) {
+        await this._handleReauth(new Date().toISOString());
+        return this._fetchProductsByLineNumbersOnce(lineNumbers);
+      }
+      throw err;
+    }
   }
 
   /**

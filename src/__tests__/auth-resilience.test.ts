@@ -90,6 +90,36 @@ describe("auth resilience — graphql", () => {
   });
 });
 
+describe("auth resilience — getProductsByLineNumbers", () => {
+  let client: WaitroseClient;
+
+  beforeEach(() => {
+    client = new WaitroseClient();
+    vi.restoreAllMocks();
+  });
+
+  it("retries once after 401 on getProductsByLineNumbers", async () => {
+    let productsCallCount = 0;
+
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      if ((url as string).includes("graphql")) {
+        return { ok: true, json: async () => SESSION_PAYLOAD } as Response;
+      }
+      if ((url as string).includes("products-prod")) {
+        productsCallCount++;
+        if (productsCallCount === 1) return { ok: false, status: 401, text: async () => "Unauthorized" } as unknown as Response;
+        return { ok: true, json: async () => ({ products: [{ id: "p1", lineNumber: "ln1", name: "Feta" }] }) } as Response;
+      }
+      return { ok: true, json: async () => ({}) } as Response;
+    }));
+
+    await client.login("user@example.com", "pass");
+    const products = await client.getProductsByLineNumbers(["ln1"]);
+    expect(products).toHaveLength(1);
+    expect(productsCallCount).toBe(2);
+  });
+});
+
 describe("auth resilience — restApi (read tools)", () => {
   let client: WaitroseClient;
 
