@@ -23,6 +23,7 @@ export class TokenBucket {
     private readonly burst: number,
     private readonly maxQueue: number,
   ) {
+    if (perSecond <= 0) throw new RangeError(`TokenBucket: perSecond must be > 0, got ${perSecond}`);
     this.tokens = burst;
     this.lastRefill = Date.now();
   }

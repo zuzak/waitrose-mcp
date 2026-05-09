@@ -95,8 +95,8 @@ describe("checkQtyPerLineCap", () => {
 describe("rate-limiter queue overflow", () => {
   it("DeniedError thrown when queue full", async () => {
     const { TokenBucket, DeniedError } = await import("../rate-limiter.js");
-    // 0 tokens/s, burst 0, queue depth 0 → immediate denial
-    const bucket = new TokenBucket(0, 0, 0);
+    // burst 0, queue depth 0 → immediate denial regardless of rate
+    const bucket = new TokenBucket(1, 0, 0);
     await expect(bucket.acquire()).rejects.toBeInstanceOf(DeniedError);
   });
 });
