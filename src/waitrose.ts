@@ -685,6 +685,8 @@ export class WaitroseClient {
     this.refreshToken = null;
     this.customerId = null;
     this.customerOrderId = null;
+    this._storedUsername = null;
+    this._storedPassword = null;
   }
 
   /** Get the current order ID */
