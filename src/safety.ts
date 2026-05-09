@@ -13,7 +13,7 @@ export class CapError extends Error {
  */
 export function checkBasketItemCap(
   trolley: TrolleyResponse,
-  maxItems: number = parseInt(process.env.WAITROSE_MAX_BASKET_ITEMS ?? "50", 10),
+  maxItems: number = parseInt(process.env.WAITROSE_MAX_BASKET_ITEMS ?? "50", 10) || 50,
 ): void {
   const count = trolley.trolley.trolleyItems.length;
   if (count >= maxItems) {
@@ -29,7 +29,7 @@ export function checkBasketItemCap(
  */
 export function checkBasketValueCap(
   trolley: TrolleyResponse,
-  maxGbp: number = parseFloat(process.env.WAITROSE_MAX_BASKET_VALUE_GBP ?? "200"),
+  maxGbp: number = parseFloat(process.env.WAITROSE_MAX_BASKET_VALUE_GBP ?? "200") || 200,
 ): void {
   const total = trolley.trolley.trolleyTotals.totalEstimatedCost?.amount ?? 0;
   if (total >= maxGbp) {
@@ -47,7 +47,7 @@ export function checkBasketValueCap(
  */
 export function checkQtyPerLineCap(
   items: TrolleyItemInput[],
-  maxQty: number = parseInt(process.env.WAITROSE_MAX_QTY_PER_LINE ?? "5", 10),
+  maxQty: number = parseInt(process.env.WAITROSE_MAX_QTY_PER_LINE ?? "5", 10) || 5,
 ): void {
   for (const item of items) {
     if (item.quantity.amount >= maxQty) {
