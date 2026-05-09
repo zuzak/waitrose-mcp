@@ -559,6 +559,7 @@ export class WaitroseClient {
     } catch (err) {
       if (err instanceof AuthError && this._storedUsername && this._storedPassword) {
         await this._handleReauth(new Date().toISOString());
+        // Retry without acquiring a new rate-limiter token — the original token was already consumed.
         return this.graphqlOnce<T>(query, variables);
       }
       throw err;
@@ -630,6 +631,7 @@ export class WaitroseClient {
     } catch (err) {
       if (err instanceof AuthError && this._storedUsername && this._storedPassword) {
         await this._handleReauth(new Date().toISOString());
+        // Retry without acquiring a new rate-limiter token — the original token was already consumed.
         return this.restApiOnce(endpoint, body);
       }
       throw err;
@@ -1118,6 +1120,7 @@ export class WaitroseClient {
     } catch (err) {
       if (err instanceof AuthError && this._storedUsername && this._storedPassword) {
         await this._handleReauth(new Date().toISOString());
+        // Retry without acquiring a new rate-limiter token — the original token was already consumed.
         return this._fetchProductsByLineNumbersOnce(lineNumbers);
       }
       throw err;
