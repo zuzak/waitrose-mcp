@@ -76,7 +76,9 @@ export class TokenBucket {
 
 /** Build a TokenBucket from environment variables with defaults. */
 export function rateLimiterFromEnv(): TokenBucket {
-  const perSecond = parseFloat(process.env.WAITROSE_RATE_LIMIT_PER_SECOND ?? "1");
+  // Clamp to 0.001 minimum: WAITROSE_RATE_LIMIT_PER_SECOND=0 would produce
+  // Infinity in scheduleDrain and cause a tight setTimeout loop.
+  const perSecond = Math.max(0.001, parseFloat(process.env.WAITROSE_RATE_LIMIT_PER_SECOND ?? "1"));
   const burst = parseInt(process.env.WAITROSE_RATE_LIMIT_BURST ?? "5", 10);
   const maxQueue = parseInt(process.env.WAITROSE_RATE_LIMIT_QUEUE_DEPTH ?? "20", 10);
   return new TokenBucket(perSecond, burst, maxQueue);
