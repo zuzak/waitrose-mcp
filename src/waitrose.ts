@@ -17,6 +17,7 @@ import { TokenBucket, rateLimiterFromEnv } from "./rate-limiter.js";
 const GRAPHQL_URL = "https://www.waitrose.com/api/graphql-prod/graph/live";
 const SEARCH_API_URL = "https://www.waitrose.com/api/content-prod/v2/cms/publish/productcontent";
 const PRODUCTS_API_URL = "https://www.waitrose.com/api/products-prod/v1/products";
+const BROWSE_PAGE_URL = "https://www.waitrose.com/ecom/shop/browse";
 const CLIENT_ID = "ANDROID_APP";
 
 // LOCAL PATCH (not upstream): the REST API rejects requests with no Authorization
@@ -478,6 +479,90 @@ export interface CategoryInfo {
   isRootCategory?: boolean;
   childCategories?: CategoryInfo[];
   productCount?: number;
+}
+
+/** Sub-category entry returned by getCategoryNavigation. */
+export interface CategoryNavEntry {
+  /** Display name as shown on waitrose.com (e.g. "Fresh & Chilled"). */
+  name: string;
+  /** Numeric Waitrose category id. */
+  categoryId: string;
+  /** Slugified browse path under the parent (e.g. "fresh_and_chilled"). */
+  path: string;
+  /** Approximate number of products listed under this category. */
+  productCount: number;
+}
+
+// ============================================================================
+// Helpers — category navigation extraction
+// ============================================================================
+
+interface RawSubCategory {
+  name: string;
+  categoryId: string;
+  expectedResults?: number;
+  hiddenInNav?: boolean;
+}
+
+/**
+ * Convert a Waitrose category name to its URL slug.
+ *
+ * Empirically: lowercase; "&" → "and"; commas dropped; whitespace → "_".
+ * Example: "Fresh & Chilled" → "fresh_and_chilled".
+ */
+export function slugifyCategoryName(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/&/g, "and")
+    .replace(/,/g, "")
+    .replace(/[^a-z0-9_\- ]/g, "")
+    .replace(/\s+/g, "_")
+    .replace(/_+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
+/**
+ * Extract the first non-empty `subCategories` array from the
+ * `window.__PRELOADED_STATE__` blob in a Waitrose browse page HTML.
+ *
+ * Returns `null` if the blob is not present or no subCategories were found.
+ */
+export function extractSubCategoriesFromBrowsePage(html: string): RawSubCategory[] | null {
+  const match = html.match(/window\.__PRELOADED_STATE__\s*=\s*JSON\.parse\(('[\s\S]*?')\);?/);
+  if (!match) return null;
+
+  let innerJson: string;
+  try {
+    // The argument to JSON.parse is a JS string literal — decode JS escapes
+    // (e.g. \uXXXX, \', \\) by evaluating it as a Function returning a string.
+    innerJson = new Function("return " + match[1])() as string;
+  } catch {
+    return null;
+  }
+
+  let data: unknown;
+  try {
+    data = JSON.parse(innerJson);
+  } catch {
+    return null;
+  }
+
+  const found = walkForSubCategories(data, 0);
+  return found && found.length > 0 ? found : null;
+}
+
+function walkForSubCategories(node: unknown, depth: number): RawSubCategory[] | null {
+  if (depth > 10 || !node || typeof node !== "object") return null;
+  const obj = node as Record<string, unknown>;
+  const subs = obj.subCategories;
+  if (Array.isArray(subs) && subs.length > 0) {
+    return subs as RawSubCategory[];
+  }
+  for (const key of Object.keys(obj)) {
+    const found = walkForSubCategories(obj[key], depth + 1);
+    if (found) return found;
+  }
+  return null;
 }
 
 // ============================================================================
@@ -1053,6 +1138,55 @@ export class WaitroseClient {
     return this.restApi("browse", {
       customerSearchRequest: { queryParams },
     });
+  }
+
+  /**
+   * List the sub-categories under a browse path.
+   *
+   * Waitrose has no JSON API for the navigation tree — the data is server-side
+   * rendered into the public `/ecom/shop/browse/{path}` page as a
+   * `window.__PRELOADED_STATE__` blob. We fetch that page and extract the
+   * `subCategories` array.
+   *
+   * @param parentPath Browse path under `/groceries`. Use `"groceries"` for the
+   *   root list of top-level aisles, or e.g. `"groceries/bakery"` for that
+   *   category's children. Defaults to `"groceries"`.
+   *
+   * @example
+   * ```ts
+   * const cats = await client.getCategoryNavigation();
+   * // cats[0] === { name: "Summer", categoryId: "413564",
+   * //               path: "groceries/summer", productCount: 1538 }
+   * ```
+   */
+  async getCategoryNavigation(parentPath: string = "groceries"): Promise<CategoryNavEntry[]> {
+    const url = `${BROWSE_PAGE_URL}/${parentPath}`;
+    await this.rateLimiter.acquire();
+    const response = await fetch(url, {
+      headers: {
+        // Use a real-looking UA — the bare Node fetch UA gets a generic 403
+        // from the CDN at this path.
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+        "Accept": "text/html",
+      },
+    });
+
+    if (!response.ok) {
+      upstreamCallsTotal.inc({ outcome: "error" });
+      throw new Error(`HTTP ${response.status}: failed to fetch browse page for "${parentPath}"`);
+    }
+
+    const html = await response.text();
+    const subs = extractSubCategoriesFromBrowsePage(html);
+    upstreamCallsTotal.inc({ outcome: "ok" });
+
+    if (!subs) return [];
+    return subs.map(s => ({
+      name: s.name,
+      categoryId: s.categoryId,
+      path: `${parentPath}/${slugifyCategoryName(s.name)}`,
+      productCount: s.expectedResults ?? 0,
+    }));
   }
 
   /**

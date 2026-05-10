@@ -136,16 +136,31 @@ function createMcpServer(): Server {
         },
       },
       {
+        name: "list_categories",
+        description:
+          "List the sub-categories under a Waitrose browse path — useful for discovering the taxonomy before calling browse_products. Returns each child category's display name, slugified browse path, numeric category id, and product count. Call with no path (or 'groceries') for the top-level aisles.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            path: {
+              type: "string",
+              description:
+                "Browse path under /ecom/shop/browse (default: 'groceries' for the top-level aisles). Pass a previously-returned `path` value to drill in.",
+            },
+          },
+        },
+      },
+      {
         name: "browse_products",
         description:
-          "Browse Waitrose products by category path. Returns products in that category. Works without authentication.",
+          "Browse Waitrose products by category path. Returns products in that category. Works without authentication. Use list_categories first if the right path isn't known.",
         inputSchema: {
           type: "object",
           properties: {
             category: {
               type: "string",
               description:
-                "Category path, e.g. 'groceries/bakery/bread' or 'groceries/dairy'",
+                "Category path, e.g. 'groceries/bakery/bread' or 'groceries/dairy'. Use list_categories to discover valid paths.",
             },
             sortBy: {
               type: "string",
@@ -344,6 +359,16 @@ function createMcpServer(): Server {
             size: args.size as number | undefined,
             start: args.start as number | undefined,
           });
+          result = { content: [{ type: "text", text: safeJson(data) }] };
+          break;
+        }
+
+        case "list_categories": {
+          const path = args.path;
+          if (path !== undefined && (typeof path !== "string" || !path)) {
+            throw new McpError(ErrorCode.InvalidParams, "path must be a non-empty string when provided");
+          }
+          const data = await client.getCategoryNavigation(path as string | undefined);
           result = { content: [{ type: "text", text: safeJson(data) }] };
           break;
         }
