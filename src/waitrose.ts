@@ -1015,11 +1015,6 @@ export class WaitroseClient {
       ...options,
     };
 
-    // Add branch ID if we have one
-    if (this.defaultBranchId && !queryParams.branchId) {
-      queryParams.branchId = this.defaultBranchId;
-    }
-
     return this.restApi("search", {
       customerSearchRequest: { queryParams },
     });
@@ -1050,11 +1045,6 @@ export class WaitroseClient {
       ...options,
     };
 
-    // Add branch ID if we have one
-    if (this.defaultBranchId && !queryParams.branchId) {
-      queryParams.branchId = this.defaultBranchId;
-    }
-
     return this.restApi("browse", {
       customerSearchRequest: { queryParams },
     });
@@ -1078,10 +1068,6 @@ export class WaitroseClient {
       excludeLinesWithConflicts: "false",
       filterByCustomerSlot: "false",
     };
-
-    if (this.defaultBranchId) {
-      params.branchId = this.defaultBranchId;
-    }
 
     const queryString = new URLSearchParams(params).toString();
     const fullUrl = `${url}?${queryString}`;
@@ -1146,10 +1132,6 @@ export class WaitroseClient {
       sortBy: options.sortBy ?? "RELEVANCE",
       ...options,
     };
-
-    if (this.defaultBranchId && !queryParams.branchId) {
-      queryParams.branchId = this.defaultBranchId;
-    }
 
     return this.restApi("search", {
       customerSearchRequest: { queryParams },
