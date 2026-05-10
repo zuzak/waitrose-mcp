@@ -65,6 +65,7 @@ describe("auth resilience — graphql", () => {
 
   it("sends Bearer unauthenticated on reauth, not the expired token", async () => {
     const newSessionAuthHeaders: string[] = [];
+    let shoppingContextCalls = 0;
 
     vi.stubGlobal("fetch", vi.fn(async (url: string, opts: RequestInit) => {
       const body = opts?.body ? JSON.parse(opts.body as string) : {};
@@ -74,7 +75,9 @@ describe("auth resilience — graphql", () => {
           newSessionAuthHeaders.push(auth);
           return { ok: true, json: async () => SESSION_PAYLOAD } as Response;
         }
-        if (newSessionAuthHeaders.length === 1) {
+        // shoppingContext: first call 401s to trigger reauth, retry succeeds
+        shoppingContextCalls++;
+        if (shoppingContextCalls === 1) {
           return { ok: false, status: 401, text: async () => "Unauthorized" } as unknown as Response;
         }
         return { ok: true, json: async () => ({ data: { shoppingContext: { customerId: "c" } } }) } as Response;
