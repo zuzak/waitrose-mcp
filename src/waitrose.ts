@@ -645,6 +645,11 @@ export class WaitroseClient {
 
   /** Log in with username and password */
   async login(username: string, password: string): Promise<Session> {
+    // Clear any prior access token so graphqlOnce sends "Bearer unauthenticated".
+    // Waitrose rejects generateSession with HTTP 401 when carrying a validly-signed
+    // (but expired) JWT — leaving the prior token in place breaks reauth-on-401.
+    this.accessToken = null;
+
     // Use graphqlOnce directly — avoid triggering re-auth loop during login itself.
     const result = await this.graphqlOnce<{ data: { generateSession: Session & { failures: ApiFailure[] | null } } }>(
       QUERIES.NewSession,
