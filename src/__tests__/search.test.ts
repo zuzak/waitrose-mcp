@@ -76,10 +76,24 @@ describe("search — does not auto-inject defaultBranchId", () => {
     expect(qp.branchId).toBeUndefined();
   });
 
+  it("browseProducts forwards explicit branchId from caller", async () => {
+    await client.login("u@example.com", "p");
+    await client.browseProducts("groceries/pantry", { branchId: "327" });
+    const qp = capturedBodies[0].body.customerSearchRequest.queryParams;
+    expect(qp.branchId).toBe("327");
+  });
+
   it("getPromotionProducts omits branchId when none passed", async () => {
     await client.login("u@example.com", "p");
     await client.getPromotionProducts("myWaitrose");
     const qp = capturedBodies[0].body.customerSearchRequest.queryParams;
     expect(qp.branchId).toBeUndefined();
+  });
+
+  it("getPromotionProducts forwards explicit branchId from caller", async () => {
+    await client.login("u@example.com", "p");
+    await client.getPromotionProducts("myWaitrose", { branchId: "327" });
+    const qp = capturedBodies[0].body.customerSearchRequest.queryParams;
+    expect(qp.branchId).toBe("327");
   });
 });
