@@ -63,6 +63,33 @@ describe("auth resilience — graphql", () => {
     expect(callCount).toBe(4);
   });
 
+  it("sends Bearer unauthenticated on reauth, not the expired token", async () => {
+    const newSessionAuthHeaders: string[] = [];
+
+    vi.stubGlobal("fetch", vi.fn(async (url: string, opts: RequestInit) => {
+      const body = opts?.body ? JSON.parse(opts.body as string) : {};
+      const auth = (opts?.headers as Record<string, string>)?.["Authorization"];
+      if (url.includes("graphql")) {
+        if (body.query?.includes("NewSession")) {
+          newSessionAuthHeaders.push(auth);
+          return { ok: true, json: async () => SESSION_PAYLOAD } as Response;
+        }
+        if (newSessionAuthHeaders.length === 1) {
+          return { ok: false, status: 401, text: async () => "Unauthorized" } as unknown as Response;
+        }
+        return { ok: true, json: async () => ({ data: { shoppingContext: { customerId: "c" } } }) } as Response;
+      }
+      return { ok: true, json: async () => ({}) } as Response;
+    }));
+
+    await client.login("user@example.com", "pass");
+    await client.getShoppingContext();
+
+    expect(newSessionAuthHeaders).toHaveLength(2);
+    expect(newSessionAuthHeaders[0]).toBe("Bearer unauthenticated");
+    expect(newSessionAuthHeaders[1]).toBe("Bearer unauthenticated");
+  });
+
   it("does not loop — re-authenticates at most once on persistent 401", async () => {
     let loginCalls = 0;
     let shoppingContextCalls = 0;
