@@ -527,15 +527,38 @@ export function slugifyCategoryName(name: string): string {
  *
  * Returns `null` if the blob is not present or no subCategories were found.
  */
+function unescapeJsSingleQuotedString(literal: string): string {
+  // Strip surrounding single quotes then decode JS escape sequences without
+  // resorting to eval / new Function, which would execute arbitrary code if
+  // the upstream page is ever tampered with.
+  const inner = literal.slice(1, -1);
+  return inner.replace(/\\(u[0-9a-fA-F]{4}|x[0-9a-fA-F]{2}|[^])/g, (_match, seq: string) => {
+    if (seq.length === 5 && seq[0] === "u") return String.fromCharCode(parseInt(seq.slice(1), 16));
+    if (seq.length === 3 && seq[0] === "x") return String.fromCharCode(parseInt(seq.slice(1), 16));
+    switch (seq) {
+      case "\\": return "\\";
+      case "'":  return "'";
+      case '"':  return '"';
+      case "n":  return "\n";
+      case "r":  return "\r";
+      case "t":  return "\t";
+      case "b":  return "\b";
+      case "f":  return "\f";
+      case "v":  return "\v";
+      case "0":  return "\0";
+      case "\n": return "";   // line continuation
+      default:   return seq;  // unrecognised escape — return literal char
+    }
+  });
+}
+
 export function extractSubCategoriesFromBrowsePage(html: string): RawSubCategory[] | null {
   const match = html.match(/window\.__PRELOADED_STATE__\s*=\s*JSON\.parse\(('[\s\S]*?')\);?/);
   if (!match) return null;
 
   let innerJson: string;
   try {
-    // The argument to JSON.parse is a JS string literal — decode JS escapes
-    // (e.g. \uXXXX, \', \\) by evaluating it as a Function returning a string.
-    innerJson = new Function("return " + match[1])() as string;
+    innerJson = unescapeJsSingleQuotedString(match[1]);
   } catch {
     return null;
   }
@@ -1180,13 +1203,18 @@ export class WaitroseClient {
     const subs = extractSubCategoriesFromBrowsePage(html);
     upstreamCallsTotal.inc({ outcome: "ok" });
 
-    if (!subs) return [];
-    return subs.map(s => ({
-      name: s.name,
-      categoryId: s.categoryId,
-      path: `${parentPath}/${slugifyCategoryName(s.name)}`,
-      productCount: s.expectedResults ?? 0,
-    }));
+    if (!subs) {
+      console.warn(`[list_categories] No subCategories in browse page for "${parentPath}"`);
+      return [];
+    }
+    return subs
+      .map(s => ({
+        name: s.name,
+        categoryId: s.categoryId,
+        path: `${parentPath}/${slugifyCategoryName(s.name)}`,
+        productCount: s.expectedResults ?? 0,
+      }))
+      .filter(entry => entry.path !== `${parentPath}/`);
   }
 
   /**
