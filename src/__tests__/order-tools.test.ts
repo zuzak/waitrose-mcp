@@ -80,7 +80,7 @@ describe("dispatchOrderTool", () => {
     const client = makeClient({ isAuthenticated: vi.fn().mockReturnValue(false) });
     await expect(
       dispatchOrderTool(client, "get_pending_orders", {}),
-      ).rejects.toThrow(McpError);
+    ).rejects.toThrow(McpError);
   });
 
   describe("get_pending_orders", () => {
@@ -185,7 +185,7 @@ describe("dispatchOrderTool", () => {
 
   describe("cancel_amend_order", () => {
     it("calls cancelAmendOrder and returns success", async () => {
-      const client = makeClient(),
+      const client = makeClient();
       vi.mocked(client.cancelAmendOrder).mockResolvedValue(undefined);
       const result = await dispatchOrderTool(client, "cancel_amend_order", { customerOrderId: "ord-789" });
       expect(client.cancelAmendOrder).toHaveBeenCalledWith("ord-789");
