@@ -157,6 +157,13 @@ describe("dispatchOrderTool", () => {
       expect(client.cancelOrder).toHaveBeenCalledWith("ord-456");
       expect(result).toEqual({ success: true, customerOrderId: "ord-456", action: "cancelled" });
     });
+
+    it("throws InvalidParams when customerOrderId is missing", async () => {
+      const client = makeClient();
+      await expect(
+        dispatchOrderTool(client, "cancel_order", {}),
+      ).rejects.toThrow(McpError);
+    });
   });
 
   describe("initiate_amend_order", () => {
@@ -167,6 +174,13 @@ describe("dispatchOrderTool", () => {
       expect(client.initiateAmendOrder).toHaveBeenCalledWith("ord-789");
       expect(result).toEqual({ success: true, customerOrderId: "ord-789", action: "amend_initiated" });
     });
+
+    it("throws InvalidParams when customerOrderId is missing", async () => {
+      const client = makeClient();
+      await expect(
+        dispatchOrderTool(client, "initiate_amend_order", {}),
+      ).rejects.toThrow(McpError);
+    });
   });
 
   describe("cancel_amend_order", () => {
@@ -176,6 +190,13 @@ describe("dispatchOrderTool", () => {
       const result = await dispatchOrderTool(client, "cancel_amend_order", { customerOrderId: "ord-789" });
       expect(client.cancelAmendOrder).toHaveBeenCalledWith("ord-789");
       expect(result).toEqual({ success: true, customerOrderId: "ord-789", action: "amend_cancelled" });
+    });
+
+    it("throws InvalidParams when customerOrderId is missing", async () => {
+      const client = makeClient();
+      await expect(
+        dispatchOrderTool(client, "cancel_amend_order", {}),
+      ).rejects.toThrow(McpError);
     });
   });
 });
