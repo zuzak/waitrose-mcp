@@ -30,6 +30,12 @@ describe("redactArgs", () => {
     expect(result.sortBy).toBe("RELEVANCE");
   });
 
+  it("passes through path for list_categories, redacts anything else", () => {
+    const result = redactArgs("list_categories", { path: "/groceries/dairy", spurious: "leak" });
+    expect(result.path).toBe("/groceries/dairy");
+    expect(result.spurious).toBe("<redacted>");
+  });
+
   it("passes through lineNumbers for get_products_by_line_numbers", () => {
     const result = redactArgs("get_products_by_line_numbers", { lineNumbers: ["123", "456"] });
     expect(result.lineNumbers).toEqual(["123", "456"]);
