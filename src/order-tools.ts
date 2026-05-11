@@ -36,7 +36,7 @@ function parseLimit(args: Record<string, unknown>): number {
   const limit = args.limit;
   if (limit === undefined) return 10;
   if (typeof limit !== "number" || !Number.isFinite(limit) || limit < 1) {
-    throw new McpError(ErrorCode.InvalidParams, "limit must be a positive integer");
+    throw new McpError(ErrorCode.InvalidParams, "limit must be at least 1");
   }
   return Math.min(Math.floor(limit), 128);
 }

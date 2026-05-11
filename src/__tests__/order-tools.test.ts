@@ -115,7 +115,15 @@ describe("dispatchOrderTool", () => {
   });
 
   describe("get_previous_orders", () => {
-    it("returns previous orders", async () => {
+    it("returns previous orders with default limit", async () => {
+      const client = makeClient();
+      vi.mocked(client.getPreviousOrders).mockResolvedValue([stubOrder]);
+      const result = await dispatchOrderTool(client, "get_previous_orders", {});
+      expect(client.getPreviousOrders).toHaveBeenCalledWith(10);
+      expect(result).toEqual([stubOrder]);
+    });
+
+    it("returns previous orders with custom limit", async () => {
       const client = makeClient();
       vi.mocked(client.getPreviousOrders).mockResolvedValue([stubOrder]);
       const result = await dispatchOrderTool(client, "get_previous_orders", { limit: 3 });
