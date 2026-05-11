@@ -17,7 +17,6 @@ import { TokenBucket, rateLimiterFromEnv } from "./rate-limiter.js";
 const GRAPHQL_URL = "https://www.waitrose.com/api/graphql-prod/graph/live";
 const SEARCH_API_URL = "https://www.waitrose.com/api/content-prod/v2/cms/publish/productcontent";
 const PRODUCTS_API_URL = "https://www.waitrose.com/api/products-prod/v1/products";
-const BROWSE_PAGE_URL = "https://www.waitrose.com/ecom/shop/browse";
 const CLIENT_ID = "ANDROID_APP";
 
 // LOCAL PATCH (not upstream): the REST API rejects requests with no Authorization
@@ -494,91 +493,6 @@ interface RawSubCategory {
   categoryId: string;
   expectedResults?: number;
   hiddenInNav?: boolean;
-  url?: string;
-}
-
-/**
- * Convert a Waitrose category name to its URL slug.
- *
- * Empirically: lowercase; "&" → "and"; commas dropped; whitespace → "_".
- * Example: "Fresh & Chilled" → "fresh_and_chilled".
- */
-export function slugifyCategoryName(name: string): string {
-  return name
-    .toLowerCase()
-    .replace(/&/g, "and")
-    .replace(/,/g, "")
-    .replace(/[^a-z0-9_\- ]/g, "")
-    .replace(/\s+/g, "_")
-    .replace(/_+/g, "_")
-    .replace(/^_+|_+$/g, "");
-}
-
-/**
- * Extract the first non-empty `subCategories` array from the
- * `window.__PRELOADED_STATE__` blob in a Waitrose browse page HTML.
- *
- * Returns `null` if the blob is not present or no subCategories were found.
- */
-function unescapeJsSingleQuotedString(literal: string): string {
-  // Strip surrounding single quotes then decode JS escape sequences without
-  // resorting to eval / new Function, which would execute arbitrary code if
-  // the upstream page is ever tampered with.
-  const inner = literal.slice(1, -1);
-  return inner.replace(/\\(u[0-9a-fA-F]{4}|x[0-9a-fA-F]{2}|[^])/g, (_match, seq: string) => {
-    if (seq.length === 5 && seq[0] === "u") return String.fromCharCode(parseInt(seq.slice(1), 16));
-    if (seq.length === 3 && seq[0] === "x") return String.fromCharCode(parseInt(seq.slice(1), 16));
-    switch (seq) {
-      case "\\": return "\\";
-      case "'":  return "'";
-      case '"':  return '"';
-      case "n":  return "\n";
-      case "r":  return "\r";
-      case "t":  return "\t";
-      case "b":  return "\b";
-      case "f":  return "\f";
-      case "v":  return "\v";
-      case "0":  return "\0";
-      case "\n": return "";   // line continuation
-      default:   return seq;  // unrecognised escape — return literal char
-    }
-  });
-}
-
-export function extractSubCategoriesFromBrowsePage(html: string): RawSubCategory[] | null {
-  const match = html.match(/window\.__PRELOADED_STATE__\s*=\s*JSON\.parse\(('[\s\S]*?')\);?/);
-  if (!match) return null;
-
-  let innerJson: string;
-  try {
-    innerJson = unescapeJsSingleQuotedString(match[1]);
-  } catch {
-    return null;
-  }
-
-  let data: unknown;
-  try {
-    data = JSON.parse(innerJson);
-  } catch {
-    return null;
-  }
-
-  const found = walkForSubCategories(data, 0);
-  return found && found.length > 0 ? found : null;
-}
-
-function walkForSubCategories(node: unknown, depth: number): RawSubCategory[] | null {
-  if (depth > 10 || !node || typeof node !== "object") return null;
-  const obj = node as Record<string, unknown>;
-  const subs = obj.subCategories;
-  if (Array.isArray(subs) && subs.length > 0) {
-    return subs as RawSubCategory[];
-  }
-  for (const key of Object.keys(obj)) {
-    const found = walkForSubCategories(obj[key], depth + 1);
-    if (found) return found;
-  }
-  return null;
 }
 
 // ============================================================================
