@@ -18,6 +18,11 @@ const SAFE_ARGS: Record<string, Set<string>> = {
   get_shopping_context: new Set([]),
   get_account_info: new Set([]),
   get_campaigns: new Set([]),
+  // postcode is PII — intentionally omitted from get_current_slot allowlist
+  get_current_slot: new Set([]),
+  list_slot_dates: new Set(["slotType", "branchId", "addressId"]),
+  list_slot_days: new Set(["slotType", "fromDate", "branchId", "addressId"]),
+  book_slot: new Set(["slotId", "slotType", "addressId"]),
 };
 
 /**
