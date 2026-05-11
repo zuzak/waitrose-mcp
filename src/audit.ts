@@ -10,6 +10,9 @@ const SAFE_ARGS: Record<string, Set<string>> = {
   remove_from_trolley: new Set(["lineNumber"]),
   update_trolley_items: new Set(["items"]),
   empty_trolley: new Set([]),
+  get_shopping_context: new Set([]),
+  get_account_info: new Set([]),
+  get_campaigns: new Set([]),
 };
 
 /**
