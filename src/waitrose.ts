@@ -866,20 +866,34 @@ export class WaitroseClient {
     );
 
     if (result.data.cancelOrder.failures?.length) {
-      throw new Error(`Cancel failed: ${result.data.cancelOrder.failures.map(f => f.message).join(", ")}`);
+      throw new Error(`Cancel failed: ${result.data.cancelOrder.failures.map(f => `${f.type}: ${f.message}`).join(", ")}`);
     }
   }
 
   /** Start amending an existing order */
   async initiateAmendOrder(customerOrderId: string): Promise<void> {
+    // Idempotency: if the session is already in AMENDING state (e.g. after a server
+    // restart mid-amendment), skip the mutation and sync local state from the server.
+    // Without this, a second call produces ORDER_ORCHESTRATION_004.
+    const preContext = await this.getShoppingContext();
+    if (preContext.customerOrderState === "AMENDING") {
+      this.customerOrderId = preContext.customerOrderId;
+      return;
+    }
+
     const result = await this.graphql<{ data: { amendOrder: { failures: ApiFailure[] | null } } }>(
       QUERIES.InitiateAmendOrder,
       { input: customerOrderId }
     );
 
     if (result.data.amendOrder.failures?.length) {
-      throw new Error(`Amend failed: ${result.data.amendOrder.failures.map(f => f.message).join(", ")}`);
+      throw new Error(`Amend failed: ${result.data.amendOrder.failures.map(f => `${f.type}: ${f.message}`).join(", ")}`);
     }
+
+    // Sync local customerOrderId from server — trolley write tools use this.customerOrderId,
+    // so it must reflect the placed order ID rather than the login-session basket ID.
+    const postContext = await this.getShoppingContext();
+    this.customerOrderId = postContext.customerOrderId;
   }
 
   /** Cancel amending an order */
@@ -890,8 +904,12 @@ export class WaitroseClient {
     );
 
     if (result.data.cancelAmendOrder.failures?.length) {
-      throw new Error(`Cancel amend failed: ${result.data.cancelAmendOrder.failures.map(f => f.message).join(", ")}`);
+      throw new Error(`Cancel amend failed: ${result.data.cancelAmendOrder.failures.map(f => `${f.type}: ${f.message}`).join(", ")}`);
     }
+
+    // Revert customerOrderId to whatever the server reports after cancellation.
+    const context = await this.getShoppingContext();
+    this.customerOrderId = context.customerOrderId;
   }
 
   // ==========================================================================
