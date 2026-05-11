@@ -877,6 +877,11 @@ export class WaitroseClient {
     // Without this, a second call produces ORDER_ORCHESTRATION_004.
     const preContext = await this.getShoppingContext();
     if (preContext.customerOrderState === "AMENDING") {
+      if (preContext.customerOrderId !== customerOrderId) {
+        throw new Error(
+          `Cannot amend order ${customerOrderId} — session is already amending order ${preContext.customerOrderId}`
+        );
+      }
       this.customerOrderId = preContext.customerOrderId;
       return;
     }
