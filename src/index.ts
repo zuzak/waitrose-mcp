@@ -14,6 +14,7 @@ import { CapError } from "./safety.js";
 import { DeniedError } from "./rate-limiter.js";
 import { dispatchTrolleyTool, isTrolleyTool } from "./trolley-tools.js";
 import { dispatchOrderTool, isOrderTool } from "./order-tools.js";
+import { dispatchAccountTool, isAccountTool } from "./account-tools.js";
 
 const VERSION = "0.1.0";
 const SERVER_NAME = "waitrose-mcp";
@@ -137,31 +138,16 @@ function createMcpServer(): Server {
         },
       },
       {
-        name: "list_categories",
-        description:
-          "List the sub-categories under a Waitrose browse path — useful for discovering the taxonomy before calling browse_products. Returns each child category's display name, slugified browse path, numeric category id, and product count. Call with no path (or 'groceries') for the top-level aisles.",
-        inputSchema: {
-          type: "object",
-          properties: {
-            path: {
-              type: "string",
-              description:
-                "Browse path under /ecom/shop/browse (default: 'groceries' for the top-level aisles). Pass a previously-returned `path` value to drill in.",
-            },
-          },
-        },
-      },
-      {
         name: "browse_products",
         description:
-          "Browse Waitrose products by category path. Returns products in that category. Works without authentication. Use list_categories first if the right path isn't known.",
+          "Browse Waitrose products by category path. Returns products in that category. Works without authentication.",
         inputSchema: {
           type: "object",
           properties: {
             category: {
               type: "string",
               description:
-                "Category path, e.g. 'groceries/bakery/bread' or 'groceries/dairy'. Use list_categories to discover valid paths.",
+                "Category path, e.g. 'groceries/bakery/bread' or 'groceries/dairy'.",
             },
             sortBy: {
               type: "string",
@@ -393,6 +379,24 @@ function createMcpServer(): Server {
           required: ["customerOrderId"],
         },
       },
+      {
+        name: "get_shopping_context",
+        description:
+          "Get the current shopping session context — customer ID, active order ID, order state, and default branch. Requires authentication.",
+        inputSchema: { type: "object", properties: {} },
+      },
+      {
+        name: "get_account_info",
+        description:
+          "Get the authenticated customer's account profile and myWaitrose membership details. Requires authentication.",
+        inputSchema: { type: "object", properties: {} },
+      },
+      {
+        name: "get_campaigns",
+        description:
+          "List active Waitrose marketing campaigns (promotional periods with start/end dates). Requires authentication.",
+        inputSchema: { type: "object", properties: {} },
+      },
     ],
   }));
 
@@ -452,16 +456,6 @@ function createMcpServer(): Server {
           break;
         }
 
-        case "list_categories": {
-          const path = args.path;
-          if (path !== undefined && (typeof path !== "string" || !path)) {
-            throw new McpError(ErrorCode.InvalidParams, "path must be a non-empty string when provided");
-          }
-          const data = await client.getCategoryNavigation(path as string | undefined);
-          result = { content: [{ type: "text", text: safeJson(data) }] };
-          break;
-        }
-
         case "get_products_by_line_numbers": {
           const lineNumbers = args.lineNumbers;
           if (
@@ -504,6 +498,11 @@ function createMcpServer(): Server {
           }
           if (isOrderTool(toolName)) {
             const data = await dispatchOrderTool(client, toolName, args);
+            result = { content: [{ type: "text", text: safeJson(data) }] };
+            break;
+          }
+          if (isAccountTool(toolName)) {
+            const data = await dispatchAccountTool(client, toolName, args);
             result = { content: [{ type: "text", text: safeJson(data) }] };
             break;
           }

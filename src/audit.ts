@@ -4,7 +4,6 @@ const SAFE_ARGS: Record<string, Set<string>> = {
   browse_products: new Set(["category", "sortBy", "size", "start"]),
   get_products_by_line_numbers: new Set(["lineNumbers"]),
   get_promotion_products: new Set(["promotionId", "sortBy", "size", "start"]),
-  list_categories: new Set(["path"]),
   get_trolley: new Set([]),
   add_to_trolley: new Set(["lineNumber", "quantity", "uom"]),
   remove_from_trolley: new Set(["lineNumber"]),
@@ -16,6 +15,9 @@ const SAFE_ARGS: Record<string, Set<string>> = {
   cancel_order: new Set(["customerOrderId"]),
   initiate_amend_order: new Set(["customerOrderId"]),
   cancel_amend_order: new Set(["customerOrderId"]),
+  get_shopping_context: new Set([]),
+  get_account_info: new Set([]),
+  get_campaigns: new Set([]),
 };
 
 /**
