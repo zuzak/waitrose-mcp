@@ -80,7 +80,7 @@ describe("dispatchOrderTool", () => {
     const client = makeClient({ isAuthenticated: vi.fn().mockReturnValue(false) });
     await expect(
       dispatchOrderTool(client, "get_pending_orders", {}),
-    ).rejects.toThrow(McpError);
+      ).rejects.toThrow(McpError);
   });
 
   describe("get_pending_orders", () => {
@@ -157,6 +157,13 @@ describe("dispatchOrderTool", () => {
       expect(client.cancelOrder).toHaveBeenCalledWith("ord-456");
       expect(result).toEqual({ success: true, customerOrderId: "ord-456", action: "cancelled" });
     });
+
+    it("throws InvalidParams when customerOrderId is missing", async () => {
+      const client = makeClient();
+      await expect(
+        dispatchOrderTool(client, "cancel_order", {}),
+      ).rejects.toThrow(McpError);
+    });
   });
 
   describe("initiate_amend_order", () => {
@@ -167,15 +174,29 @@ describe("dispatchOrderTool", () => {
       expect(client.initiateAmendOrder).toHaveBeenCalledWith("ord-789");
       expect(result).toEqual({ success: true, customerOrderId: "ord-789", action: "amend_initiated" });
     });
+
+    it("throws InvalidParams when customerOrderId is missing", async () => {
+      const client = makeClient();
+      await expect(
+        dispatchOrderTool(client, "initiate_amend_order", {}),
+      ).rejects.toThrow(McpError);
+    });
   });
 
   describe("cancel_amend_order", () => {
     it("calls cancelAmendOrder and returns success", async () => {
-      const client = makeClient();
+      const client = makeClient(),
       vi.mocked(client.cancelAmendOrder).mockResolvedValue(undefined);
       const result = await dispatchOrderTool(client, "cancel_amend_order", { customerOrderId: "ord-789" });
       expect(client.cancelAmendOrder).toHaveBeenCalledWith("ord-789");
       expect(result).toEqual({ success: true, customerOrderId: "ord-789", action: "amend_cancelled" });
+    });
+
+    it("throws InvalidParams when customerOrderId is missing", async () => {
+      const client = makeClient();
+      await expect(
+        dispatchOrderTool(client, "cancel_amend_order", {}),
+      ).rejects.toThrow(McpError);
     });
   });
 });
