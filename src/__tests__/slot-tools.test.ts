@@ -205,12 +205,13 @@ describe("dispatchSlotTool", () => {
   });
 
   describe("book_slot", () => {
-    it("books a slot and returns result", async () => {
+    it("books a slot and returns result when confirm is true", async () => {
       const client = makeClient();
       vi.mocked(client.bookSlot).mockResolvedValue(stubBookResult);
       const result = await dispatchSlotTool(client, "book_slot", {
         slotId: "slot-abc",
         slotType: "DELIVERY",
+        confirm: true,
       });
       expect(client.bookSlot).toHaveBeenCalledWith("slot-abc", "DELIVERY", undefined);
       expect(result).toEqual(stubBookResult);
@@ -223,21 +224,43 @@ describe("dispatchSlotTool", () => {
         slotId: "slot-abc",
         slotType: "DELIVERY",
         addressId: "addr-1",
+        confirm: true,
       });
       expect(client.bookSlot).toHaveBeenCalledWith("slot-abc", "DELIVERY", "addr-1");
+    });
+
+    it("throws InvalidParams when confirm is missing", async () => {
+      const client = makeClient();
+      await expect(
+        dispatchSlotTool(client, "book_slot", {
+          slotId: "slot-abc",
+          slotType: "DELIVERY",
+        }),
+      ).rejects.toThrow(McpError);
+    });
+
+    it("throws InvalidParams when confirm is false", async () => {
+      const client = makeClient();
+      await expect(
+        dispatchSlotTool(client, "book_slot", {
+          slotId: "slot-abc",
+          slotType: "DELIVERY",
+          confirm: false,
+        }),
+      ).rejects.toThrow(McpError);
     });
 
     it("throws InvalidParams when slotId is missing", async () => {
       const client = makeClient();
       await expect(
-        dispatchSlotTool(client, "book_slot", { slotType: "DELIVERY" }),
+        dispatchSlotTool(client, "book_slot", { slotType: "DELIVERY", confirm: true }),
       ).rejects.toThrow(McpError);
     });
 
     it("throws InvalidParams when slotType is missing", async () => {
       const client = makeClient();
       await expect(
-        dispatchSlotTool(client, "book_slot", { slotId: "slot-abc" }),
+        dispatchSlotTool(client, "book_slot", { slotId: "slot-abc", confirm: true }),
       ).rejects.toThrow(McpError);
     });
 
@@ -247,6 +270,7 @@ describe("dispatchSlotTool", () => {
         dispatchSlotTool(client, "book_slot", {
           slotId: "slot-abc",
           slotType: "TELEPORT",
+          confirm: true,
         }),
       ).rejects.toThrow(McpError);
     });

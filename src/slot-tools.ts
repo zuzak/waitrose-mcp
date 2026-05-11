@@ -80,8 +80,8 @@ export async function dispatchSlotTool(
 
     case "list_slot_days": {
       const slotType = parseSlotType(args);
-      const fromDate = args.fromDate;
-      if (typeof fromDate !== "string" || !fromDate) {
+      const fromDate = parseOptionalString(args, "fromDate");
+      if (!fromDate) {
         throw new McpError(ErrorCode.InvalidParams, "fromDate is required");
       }
       const branchId = parseOptionalString(args, "branchId");
@@ -90,8 +90,14 @@ export async function dispatchSlotTool(
     }
 
     case "book_slot": {
-      const slotId = args.slotId;
-      if (typeof slotId !== "string" || !slotId) {
+      if (args.confirm !== true) {
+        throw new McpError(
+          ErrorCode.InvalidParams,
+          "Set confirm: true to proceed — this reserves a slot and cannot be undone via the API",
+        );
+      }
+      const slotId = parseOptionalString(args, "slotId");
+      if (!slotId) {
         throw new McpError(ErrorCode.InvalidParams, "slotId is required");
       }
       const slotType = parseSlotType(args);

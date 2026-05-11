@@ -484,8 +484,12 @@ function createMcpServer(): Server {
               type: "string",
               description: "Delivery address ID (optional; for delivery slots)",
             },
+            confirm: {
+              type: "boolean",
+              description: "Must be true — explicit acknowledgement that this reserves a slot",
+            },
           },
-          required: ["slotId", "slotType"],
+          required: ["slotId", "slotType", "confirm"],
         },
       },
     ],
