@@ -21,6 +21,7 @@ function browseApiResponse(subCategories: unknown[]): Response {
   return {
     ok: true,
     status: 200,
+    text: async () => "",
     json: async () => ({ totalMatches: 10, productsInResultset: 1, subCategories, componentsAndProducts: [] }),
   } as unknown as Response;
 }

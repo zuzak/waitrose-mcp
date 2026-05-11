@@ -162,7 +162,7 @@ function createMcpServer(): Server {
             category: {
               type: "string",
               description:
-                "Category path, e.g. 'groceries/bakery/bread' or 'groceries/dairy'.",
+                "Category path or numeric categoryId. Pass a categoryId from list_categories to browse products in that category. Slash-separated paths (e.g. 'groceries/bakery/bread') are also accepted.",
             },
             sortBy: {
               type: "string",
