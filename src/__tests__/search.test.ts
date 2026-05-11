@@ -97,3 +97,36 @@ describe("search — does not auto-inject defaultBranchId", () => {
     expect(qp.branchId).toBe("327");
   });
 });
+
+describe("getProductsByLineNumbers — does not auto-inject defaultBranchId", () => {
+  let client: WaitroseClient;
+  let capturedUrls: string[] = [];
+
+  beforeEach(() => {
+    capturedUrls = [];
+    client = new WaitroseClient();
+    vi.restoreAllMocks();
+    vi.stubGlobal("fetch", vi.fn(async (url: string, _opts: RequestInit) => {
+      if (url.includes("graphql")) {
+        return { ok: true, json: async () => SESSION_PAYLOAD } as Response;
+      }
+      capturedUrls.push(url);
+      return { ok: true, json: async () => ({ products: [] }) } as Response;
+    }));
+  });
+
+  it("omits branchId when no session is in scope", async () => {
+    await client.getProductsByLineNumbers(["123", "456"]);
+    expect(capturedUrls).toHaveLength(1);
+    const params = new URL(capturedUrls[0]).searchParams;
+    expect(params.has("branchId")).toBe(false);
+  });
+
+  it("omits branchId after login with session carrying defaultBranchId (regression for #26 fix)", async () => {
+    await client.login("u@example.com", "p");
+    await client.getProductsByLineNumbers(["123", "456"]);
+    expect(capturedUrls).toHaveLength(1);
+    const params = new URL(capturedUrls[0]).searchParams;
+    expect(params.has("branchId")).toBe(false);
+  });
+});

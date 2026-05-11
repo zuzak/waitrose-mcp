@@ -13,6 +13,8 @@ import { redactArgs, auditLog } from "./audit.js";
 import { CapError } from "./safety.js";
 import { DeniedError } from "./rate-limiter.js";
 import { dispatchTrolleyTool, isTrolleyTool } from "./trolley-tools.js";
+import { dispatchOrderTool, isOrderTool } from "./order-tools.js";
+import { dispatchAccountTool, isAccountTool } from "./account-tools.js";
 
 const VERSION = "0.1.0";
 const SERVER_NAME = "waitrose-mcp";
@@ -153,14 +155,14 @@ function createMcpServer(): Server {
       {
         name: "browse_products",
         description:
-          "Browse Waitrose products by category path. Returns products in that category. Works without authentication. Use list_categories first if the right path isn't known.",
+          "Browse Waitrose products by category path. Returns products in that category. Works without authentication.",
         inputSchema: {
           type: "object",
           properties: {
             category: {
               type: "string",
               description:
-                "Category path, e.g. 'groceries/bakery/bread' or 'groceries/dairy'. Use list_categories to discover valid paths.",
+                "Category path, e.g. 'groceries/bakery/bread' or 'groceries/dairy'.",
             },
             sortBy: {
               type: "string",
@@ -304,6 +306,112 @@ function createMcpServer(): Server {
           "Empty the entire trolley. Returns the (now empty) trolley state. Requires authentication.",
         inputSchema: { type: "object", properties: {} },
       },
+      {
+        name: "get_pending_orders",
+        description:
+          "List pending (upcoming) Waitrose orders — placed but not yet delivered. Returns order IDs, statuses, slot times, and estimated totals. Requires authentication.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            limit: {
+              type: "number",
+              description: "Maximum orders to return (default: 10, max: 128)",
+            },
+          },
+        },
+      },
+      {
+        name: "get_previous_orders",
+        description:
+          "List past (completed or cancelled) Waitrose orders. Returns order IDs, statuses, slot times, and totals. Requires authentication.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            limit: {
+              type: "number",
+              description: "Maximum orders to return (default: 10, max: 128)",
+            },
+          },
+        },
+      },
+      {
+        name: "get_order",
+        description:
+          "Get full detail for a specific Waitrose order by ID — order lines, slot, totals, payment info, substitutions status. Requires authentication.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            customerOrderId: {
+              type: "string",
+              description: "Order ID from get_pending_orders or get_previous_orders",
+            },
+          },
+          required: ["customerOrderId"],
+        },
+      },
+      {
+        name: "cancel_order",
+        description:
+          "Cancel a placed Waitrose order. Cannot be undone via the API — a re-place would require building a fresh basket. Use only when the customer has explicitly confirmed cancellation of the specific order ID. Requires authentication.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            customerOrderId: {
+              type: "string",
+              description: "Order ID to cancel",
+            },
+          },
+          required: ["customerOrderId"],
+        },
+      },
+      {
+        name: "initiate_amend_order",
+        description:
+          "Open an amendment session against a placed order. After this call, the active trolley mirrors the order's items — trolley write tools (add_to_trolley, update_trolley_items, etc.) modify the placed order rather than a fresh basket. Close the amend via the Waitrose website or cancel_amend_order. There is no API method to programmatically commit an amend; Waitrose closes it at the slot day. Requires authentication.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            customerOrderId: {
+              type: "string",
+              description: "Order ID to start amending",
+            },
+          },
+          required: ["customerOrderId"],
+        },
+      },
+      {
+        name: "cancel_amend_order",
+        description:
+          "Discard an in-progress order amendment, reverting the trolley to the original placed order state. Requires authentication.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            customerOrderId: {
+              type: "string",
+              description: "Order ID whose amendment session to cancel",
+            },
+          },
+          required: ["customerOrderId"],
+        },
+      },
+      {
+        name: "get_shopping_context",
+        description:
+          "Get the current shopping session context — customer ID, active order ID, order state, and default branch. Requires authentication.",
+        inputSchema: { type: "object", properties: {} },
+      },
+      {
+        name: "get_account_info",
+        description:
+          "Get the authenticated customer's account profile and myWaitrose membership details. Requires authentication.",
+        inputSchema: { type: "object", properties: {} },
+      },
+      {
+        name: "get_campaigns",
+        description:
+          "List active Waitrose marketing campaigns (promotional periods with start/end dates). Requires authentication.",
+        inputSchema: { type: "object", properties: {} },
+      },
     ],
   }));
 
@@ -410,6 +518,16 @@ function createMcpServer(): Server {
         default:
           if (isTrolleyTool(toolName)) {
             const data = await dispatchTrolleyTool(client, toolName, args);
+            result = { content: [{ type: "text", text: safeJson(data) }] };
+            break;
+          }
+          if (isOrderTool(toolName)) {
+            const data = await dispatchOrderTool(client, toolName, args);
+            result = { content: [{ type: "text", text: safeJson(data) }] };
+            break;
+          }
+          if (isAccountTool(toolName)) {
+            const data = await dispatchAccountTool(client, toolName, args);
             result = { content: [{ type: "text", text: safeJson(data) }] };
             break;
           }

@@ -484,10 +484,6 @@ export interface CategoryNavEntry {
   productCount: number;
 }
 
-// ============================================================================
-// Helpers — category navigation extraction
-// ============================================================================
-
 interface RawSubCategory {
   name: string;
   categoryId: string;
@@ -1071,19 +1067,6 @@ export class WaitroseClient {
     });
   }
 
-  /**
-   * List the sub-categories under a browse path.
-   *
-   * Waitrose has no JSON API for the navigation tree — the data is server-side
-   * rendered into the public `/ecom/shop/browse/{path}` page as a
-   * `window.__PRELOADED_STATE__` blob. We fetch that page and extract the
-   * `subCategories` array.
-   *
-   * @param parentPath Browse path under `/groceries`. Use `"groceries"` for the
-   *   root list of top-level aisles, or e.g. `"groceries/bakery"` for that
-   * The Groceries root category id is "10051". Pass a categoryId returned
-   * by a previous call to drill into a subcategory.
-   */
   async getCategoryNavigation(categoryId: string = "10051"): Promise<CategoryNavEntry[]> {
     const raw = await this.restApi("browse", {
       customerSearchRequest: {
