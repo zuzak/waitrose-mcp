@@ -104,6 +104,37 @@ describe("getCategoryNavigation", () => {
     ]);
   });
 
+  it("uses canonical url from state blob when present, ignoring slug generation", async () => {
+    const state = {
+      offers: {
+        subCategories: [
+          {
+            name: "Fresh & Chilled",
+            categoryId: "301134",
+            expectedResults: 3527,
+            url: "/ecom/shop/browse/groceries/fresh-chilled",
+          },
+          {
+            name: "Bakery",
+            categoryId: "300119",
+            expectedResults: 553,
+            url: "/ecom/shop/browse/groceries/bakery",
+          },
+        ],
+      },
+    };
+    vi.stubGlobal("fetch", vi.fn(async () => ({
+      ok: true, status: 200, text: async () => buildBrowsePageHtml(state),
+    } as unknown as Response)));
+
+    const result = await client.getCategoryNavigation();
+
+    expect(result).toEqual([
+      { name: "Fresh & Chilled", categoryId: "301134", path: "groceries/fresh-chilled", productCount: 3527 },
+      { name: "Bakery", categoryId: "300119", path: "groceries/bakery", productCount: 553 },
+    ]);
+  });
+
   it("uses the provided parent path and joins children under it", async () => {
     const state = {
       offers: {

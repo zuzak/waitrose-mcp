@@ -502,6 +502,7 @@ interface RawSubCategory {
   categoryId: string;
   expectedResults?: number;
   hiddenInNav?: boolean;
+  url?: string;
 }
 
 /**
@@ -1207,14 +1208,17 @@ export class WaitroseClient {
       console.warn(`[list_categories] No subCategories in browse page for "${parentPath}"`);
       return [];
     }
+    const BROWSE_PREFIX = "/ecom/shop/browse/";
     return subs
-      .map(s => ({
-        name: s.name,
-        categoryId: s.categoryId,
-        path: `${parentPath}/${slugifyCategoryName(s.name)}`,
-        productCount: s.expectedResults ?? 0,
-      }))
-      .filter(entry => entry.path !== `${parentPath}/`);
+      .map(s => {
+        // Prefer the canonical URL from the state blob; fall back to slug generation.
+        // The state blob url is an absolute path like "/ecom/shop/browse/groceries/fresh-chilled".
+        const path = s.url?.startsWith(BROWSE_PREFIX)
+          ? s.url.slice(BROWSE_PREFIX.length)
+          : `${parentPath}/${slugifyCategoryName(s.name)}`;
+        return { name: s.name, categoryId: s.categoryId, path, productCount: s.expectedResults ?? 0 };
+      })
+      .filter(entry => !entry.path.endsWith("/") && entry.path.includes("/"));
   }
 
   /**
