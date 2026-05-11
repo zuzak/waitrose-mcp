@@ -50,7 +50,7 @@ describe("getCategoryNavigation", () => {
       { name: "Fresh & Chilled", categoryId: "301134", productCount: 3527 },
       { name: "Bakery", categoryId: "300119", productCount: 553 },
     ]);
-    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
     expect(body.customerSearchRequest.queryParams.category).toBe("10051");
   });
 
@@ -64,7 +64,7 @@ describe("getCategoryNavigation", () => {
 
     expect(result).toHaveLength(1);
     expect(result[0]).toMatchObject({ name: "Bread", categoryId: "300121", productCount: 105 });
-    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
     expect(body.customerSearchRequest.queryParams.category).toBe("300119");
   });
 
