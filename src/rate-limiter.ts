@@ -1,3 +1,5 @@
+import { rateLimitDeniedTotal, rateLimitQueueDepth } from "./metrics.js";
+
 export class DeniedError extends Error {
   constructor(message: string) {
     super(message);
@@ -43,6 +45,7 @@ export class TokenBucket {
     }
 
     if (this.queue.length >= this.maxQueue) {
+      rateLimitDeniedTotal.inc();
       return Promise.reject(
         new DeniedError(
           `Rate limit queue full (max ${this.maxQueue} pending requests). ` +
@@ -53,6 +56,7 @@ export class TokenBucket {
 
     return new Promise<void>((resolve) => {
       this.queue.push(resolve);
+      rateLimitQueueDepth.set(this.queue.length);
       if (!this.draining) this.scheduleDrain();
     });
   }
@@ -66,6 +70,7 @@ export class TokenBucket {
         this.tokens -= 1;
         this.queue.shift()!();
       }
+      rateLimitQueueDepth.set(this.queue.length);
       if (this.queue.length > 0) {
         this.scheduleDrain();
       } else {

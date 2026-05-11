@@ -38,3 +38,15 @@ export const reauthsTotal = new Counter({
   labelNames: ["outcome"] as const,
   registers: [registry],
 });
+
+export const rateLimitDeniedTotal = new Counter({
+  name: "waitrose_mcp_rate_limit_denied_total",
+  help: "Total requests denied by the token-bucket rate limiter (queue full)",
+  registers: [registry],
+});
+
+export const rateLimitQueueDepth = new Gauge({
+  name: "waitrose_mcp_rate_limit_queue_depth",
+  help: "Current number of requests waiting in the rate-limiter queue",
+  registers: [registry],
+});
