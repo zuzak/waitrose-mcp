@@ -1075,7 +1075,10 @@ export class WaitroseClient {
     });
 
     const subs = raw.subCategories;
-    if (!subs?.length) return [];
+    if (!subs?.length) {
+      console.info("[Waitrose] getCategoryNavigation: no subcategories returned for categoryId=%s", categoryId);
+      return [];
+    }
 
     return subs
       .filter(s => !s.hiddenInNav)

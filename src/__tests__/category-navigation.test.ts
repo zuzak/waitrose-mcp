@@ -83,6 +83,7 @@ describe("getCategoryNavigation", () => {
   it("returns an empty array when subCategories is absent or empty", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => ({
       ok: true, status: 200,
+      text: async () => "",
       json: async () => ({ totalMatches: 0, subCategories: [], componentsAndProducts: [] }),
     } as unknown as Response)));
 
