@@ -13,6 +13,7 @@ import { redactArgs, auditLog } from "./audit.js";
 import { CapError } from "./safety.js";
 import { DeniedError } from "./rate-limiter.js";
 import { dispatchTrolleyTool, isTrolleyTool } from "./trolley-tools.js";
+import { dispatchAccountTool, isAccountTool } from "./account-tools.js";
 
 const VERSION = "0.1.0";
 const SERVER_NAME = "waitrose-mcp";
@@ -304,6 +305,24 @@ function createMcpServer(): Server {
           "Empty the entire trolley. Returns the (now empty) trolley state. Requires authentication.",
         inputSchema: { type: "object", properties: {} },
       },
+      {
+        name: "get_shopping_context",
+        description:
+          "Get the current shopping session context — customer ID, active order ID, order state, and default branch. Requires authentication.",
+        inputSchema: { type: "object", properties: {} },
+      },
+      {
+        name: "get_account_info",
+        description:
+          "Get the authenticated customer's account profile and myWaitrose membership details. Requires authentication.",
+        inputSchema: { type: "object", properties: {} },
+      },
+      {
+        name: "get_campaigns",
+        description:
+          "List active Waitrose marketing campaigns (promotional periods with start/end dates). Requires authentication.",
+        inputSchema: { type: "object", properties: {} },
+      },
     ],
   }));
 
@@ -410,6 +429,11 @@ function createMcpServer(): Server {
         default:
           if (isTrolleyTool(toolName)) {
             const data = await dispatchTrolleyTool(client, toolName, args);
+            result = { content: [{ type: "text", text: safeJson(data) }] };
+            break;
+          }
+          if (isAccountTool(toolName)) {
+            const data = await dispatchAccountTool(client, toolName, args);
             result = { content: [{ type: "text", text: safeJson(data) }] };
             break;
           }
