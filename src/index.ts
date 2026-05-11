@@ -138,14 +138,14 @@ function createMcpServer(): Server {
       {
         name: "list_categories",
         description:
-          "List the sub-categories under a Waitrose browse path — useful for discovering the taxonomy before calling browse_products. Returns each child category's display name, slugified browse path, numeric category id, and product count. Call with no path (or 'groceries') for the top-level aisles.",
+          "List the sub-categories under a Waitrose category. Returns each child category's display name, numeric categoryId, and product count. Call with no argument for the top-level grocery aisles. Pass a categoryId from a previous response to drill into a subcategory. Pass the categoryId to browse_products to fetch products in that category.",
         inputSchema: {
           type: "object",
           properties: {
-            path: {
+            categoryId: {
               type: "string",
               description:
-                "Browse path under /ecom/shop/browse (default: 'groceries' for the top-level aisles). Pass a previously-returned `path` value to drill in.",
+                "Numeric Waitrose category id (default: '10051' for top-level groceries). Pass a categoryId from a previous list_categories response to drill in.",
             },
           },
         },
@@ -364,11 +364,11 @@ function createMcpServer(): Server {
         }
 
         case "list_categories": {
-          const path = args.path;
-          if (path !== undefined && (typeof path !== "string" || !path)) {
-            throw new McpError(ErrorCode.InvalidParams, "path must be a non-empty string when provided");
+          const categoryId = args.categoryId;
+          if (categoryId !== undefined && (typeof categoryId !== "string" || !categoryId)) {
+            throw new McpError(ErrorCode.InvalidParams, "categoryId must be a non-empty string when provided");
           }
-          const data = await client.getCategoryNavigation(path as string | undefined);
+          const data = await client.getCategoryNavigation(categoryId as string | undefined);
           result = { content: [{ type: "text", text: safeJson(data) }] };
           break;
         }

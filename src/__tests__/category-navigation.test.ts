@@ -71,6 +71,16 @@ describe("extractSubCategoriesFromBrowsePage", () => {
   });
 });
 
+const BROWSE_API = "https://www.waitrose.com/api/content-prod/v2/cms/publish/productcontent/browse/-1?clientType=WEB_APP";
+
+function browseApiResponse(subCategories: unknown[]): Response {
+  return {
+    ok: true,
+    status: 200,
+    json: async () => ({ totalMatches: 10, productsInResultset: 1, subCategories, componentsAndProducts: [] }),
+  } as unknown as Response;
+}
+
 describe("getCategoryNavigation", () => {
   let client: WaitroseClient;
 
@@ -79,90 +89,65 @@ describe("getCategoryNavigation", () => {
     vi.restoreAllMocks();
   });
 
-  it("fetches the browse page and maps subCategories to CategoryNavEntry", async () => {
-    const state = {
-      offers: {
-        subCategories: [
-          { name: "Fresh & Chilled", categoryId: "301134", expectedResults: 3527, hiddenInNav: false },
-          { name: "Bakery", categoryId: "300119", expectedResults: 553, hiddenInNav: false },
-        ],
-      },
-    };
-    const html = buildBrowsePageHtml(state);
-
+  it("calls the browse API with the default root categoryId and returns mapped entries", async () => {
     const fetchMock = vi.fn(async (url: string) => {
-      expect(url).toBe("https://www.waitrose.com/ecom/shop/browse/groceries");
-      return { ok: true, status: 200, text: async () => html } as unknown as Response;
+      expect(url).toBe(BROWSE_API);
+      return browseApiResponse([
+        { name: "Fresh & Chilled", categoryId: "301134", expectedResults: 3527, hiddenInNav: false },
+        { name: "Bakery", categoryId: "300119", expectedResults: 553, hiddenInNav: false },
+      ]);
     });
     vi.stubGlobal("fetch", fetchMock);
 
     const result = await client.getCategoryNavigation();
 
     expect(result).toEqual([
-      { name: "Fresh & Chilled", categoryId: "301134", path: "groceries/fresh_and_chilled", productCount: 3527 },
-      { name: "Bakery", categoryId: "300119", path: "groceries/bakery", productCount: 553 },
+      { name: "Fresh & Chilled", categoryId: "301134", productCount: 3527 },
+      { name: "Bakery", categoryId: "300119", productCount: 553 },
     ]);
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body.customerSearchRequest.queryParams.category).toBe("10051");
   });
 
-  it("uses canonical url from state blob when present, ignoring slug generation", async () => {
-    const state = {
-      offers: {
-        subCategories: [
-          {
-            name: "Fresh & Chilled",
-            categoryId: "301134",
-            expectedResults: 3527,
-            url: "/ecom/shop/browse/groceries/fresh-chilled",
-          },
-          {
-            name: "Bakery",
-            categoryId: "300119",
-            expectedResults: 553,
-            url: "/ecom/shop/browse/groceries/bakery",
-          },
-        ],
-      },
-    };
-    vi.stubGlobal("fetch", vi.fn(async () => ({
-      ok: true, status: 200, text: async () => buildBrowsePageHtml(state),
-    } as unknown as Response)));
-
-    const result = await client.getCategoryNavigation();
-
-    expect(result).toEqual([
-      { name: "Fresh & Chilled", categoryId: "301134", path: "groceries/fresh-chilled", productCount: 3527 },
-      { name: "Bakery", categoryId: "300119", path: "groceries/bakery", productCount: 553 },
-    ]);
-  });
-
-  it("uses the provided parent path and joins children under it", async () => {
-    const state = {
-      offers: {
-        subCategories: [
-          { name: "Bread", categoryId: "300121", expectedResults: 105, hiddenInNav: false },
-        ],
-      },
-    };
-    const fetchMock = vi.fn(async (url: string) => {
-      expect(url).toBe("https://www.waitrose.com/ecom/shop/browse/groceries/bakery");
-      return { ok: true, status: 200, text: async () => buildBrowsePageHtml(state) } as unknown as Response;
-    });
+  it("passes a provided categoryId to the browse API", async () => {
+    const fetchMock = vi.fn(async () => browseApiResponse([
+      { name: "Bread", categoryId: "300121", expectedResults: 105, hiddenInNav: false },
+    ]));
     vi.stubGlobal("fetch", fetchMock);
 
-    const result = await client.getCategoryNavigation("groceries/bakery");
+    const result = await client.getCategoryNavigation("300119");
 
     expect(result).toHaveLength(1);
-    expect(result[0]).toMatchObject({ name: "Bread", path: "groceries/bakery/bread", productCount: 105 });
+    expect(result[0]).toMatchObject({ name: "Bread", categoryId: "300121", productCount: 105 });
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body.customerSearchRequest.queryParams.category).toBe("300119");
+  });
+
+  it("filters out hiddenInNav entries", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => browseApiResponse([
+      { name: "Bakery", categoryId: "300119", expectedResults: 553, hiddenInNav: false },
+      { name: "Hidden", categoryId: "999", expectedResults: 1, hiddenInNav: true },
+    ])));
+
+    const result = await client.getCategoryNavigation();
+
+    expect(result).toHaveLength(1);
+    expect(result[0].name).toBe("Bakery");
+  });
+
+  it("returns an empty array when subCategories is absent or empty", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => ({
+      ok: true, status: 200,
+      json: async () => ({ totalMatches: 0, subCategories: [], componentsAndProducts: [] }),
+    } as unknown as Response)));
+
+    expect(await client.getCategoryNavigation()).toEqual([]);
   });
 
   it("throws on non-2xx HTTP response", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: false, status: 404, text: async () => "" } as unknown as Response)));
-    await expect(client.getCategoryNavigation("groceries/bogus")).rejects.toThrow(/HTTP 404/);
-  });
-
-  it("returns an empty array when the page has no subCategories", async () => {
-    const html = buildBrowsePageHtml({ unrelated: "state" });
-    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, status: 200, text: async () => html } as unknown as Response)));
-    expect(await client.getCategoryNavigation()).toEqual([]);
+    vi.stubGlobal("fetch", vi.fn(async () => ({
+      ok: false, status: 404, text: async () => "not found",
+    } as unknown as Response)));
+    await expect(client.getCategoryNavigation("300119")).rejects.toThrow(/HTTP 404/);
   });
 });

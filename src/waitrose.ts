@@ -443,17 +443,11 @@ export interface FavouriteCategory {
 
 /** Search results response */
 export interface SearchResponse {
-  /** Products matching the search */
   products: SearchProduct[];
-  /** Total number of matching products */
   totalMatches: number;
-  /** Favourite categories (for logged-in users) */
   favouriteCategories?: FavouriteCategory[];
-  /** Personalisation information */
-  personalisation?: {
-    experimentId?: string;
-    variant?: string;
-  };
+  personalisation?: { experimentId?: string; variant?: string };
+  subCategories?: RawSubCategory[];
 }
 
 /** Product details from batch lookup by line numbers */
@@ -485,10 +479,8 @@ export interface CategoryInfo {
 export interface CategoryNavEntry {
   /** Display name as shown on waitrose.com (e.g. "Fresh & Chilled"). */
   name: string;
-  /** Numeric Waitrose category id. */
+  /** Numeric Waitrose category id — pass to list_categories to drill in, or to browse_products. */
   categoryId: string;
-  /** Slugified browse path under the parent (e.g. "fresh_and_chilled"). */
-  path: string;
   /** Approximate number of products listed under this category. */
   productCount: number;
 }
@@ -712,9 +704,9 @@ export class WaitroseClient {
       totalMatches: number;
       productsInResultset?: number;
       componentsAndProducts?: Array<{ searchProduct?: SearchProduct }>;
+      subCategories?: RawSubCategory[];
     };
 
-    // Map the raw response to our cleaner SearchResponse type
     const products: SearchProduct[] = [];
     if (raw.componentsAndProducts) {
       for (const item of raw.componentsAndProducts) {
@@ -728,6 +720,7 @@ export class WaitroseClient {
     return {
       products,
       totalMatches: raw.totalMatches,
+      subCategories: raw.subCategories,
     };
   }
 
@@ -1174,51 +1167,22 @@ export class WaitroseClient {
    *
    * @param parentPath Browse path under `/groceries`. Use `"groceries"` for the
    *   root list of top-level aisles, or e.g. `"groceries/bakery"` for that
-   *   category's children. Defaults to `"groceries"`.
-   *
-   * @example
-   * ```ts
-   * const cats = await client.getCategoryNavigation();
-   * // cats[0] === { name: "Summer", categoryId: "413564",
-   * //               path: "groceries/summer", productCount: 1538 }
-   * ```
+   * The Groceries root category id is "10051". Pass a categoryId returned
+   * by a previous call to drill into a subcategory.
    */
-  async getCategoryNavigation(parentPath: string = "groceries"): Promise<CategoryNavEntry[]> {
-    const url = `${BROWSE_PAGE_URL}/${parentPath}`;
-    await this.rateLimiter.acquire();
-    const response = await fetch(url, {
-      headers: {
-        // Use a real-looking UA — the bare Node fetch UA gets a generic 403
-        // from the CDN at this path.
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
-        "Accept": "text/html",
+  async getCategoryNavigation(categoryId: string = "10051"): Promise<CategoryNavEntry[]> {
+    const raw = await this.restApi("browse", {
+      customerSearchRequest: {
+        queryParams: { category: categoryId, start: 0, size: 1, sortBy: "RELEVANCE" },
       },
     });
 
-    if (!response.ok) {
-      upstreamCallsTotal.inc({ outcome: "error" });
-      throw new Error(`HTTP ${response.status}: failed to fetch browse page for "${parentPath}"`);
-    }
+    const subs = raw.subCategories;
+    if (!subs?.length) return [];
 
-    const html = await response.text();
-    const subs = extractSubCategoriesFromBrowsePage(html);
-    upstreamCallsTotal.inc({ outcome: "ok" });
-
-    if (!subs) {
-      console.warn(`[list_categories] No subCategories in browse page for "${parentPath}"`);
-      return [];
-    }
-    const BROWSE_PREFIX = "/ecom/shop/browse/";
     return subs
-      .map(s => {
-        // Prefer the canonical URL from the state blob; fall back to slug generation.
-        // The state blob url is an absolute path like "/ecom/shop/browse/groceries/fresh-chilled".
-        const path = s.url?.startsWith(BROWSE_PREFIX)
-          ? s.url.slice(BROWSE_PREFIX.length)
-          : `${parentPath}/${slugifyCategoryName(s.name)}`;
-        return { name: s.name, categoryId: s.categoryId, path, productCount: s.expectedResults ?? 0 };
-      })
-      .filter(entry => !entry.path.endsWith("/") && entry.path.includes("/"));
+      .filter(s => !s.hiddenInNav)
+      .map(s => ({ name: s.name, categoryId: s.categoryId, productCount: s.expectedResults ?? 0 }));
   }
 
   /**
