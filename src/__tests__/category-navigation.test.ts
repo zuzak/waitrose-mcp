@@ -35,7 +35,7 @@ describe("getCategoryNavigation", () => {
   });
 
   it("calls the browse API with the default root categoryId and returns mapped entries", async () => {
-    const fetchMock = vi.fn(async (url: string) => {
+    const fetchMock = vi.fn(async (url: string, _init: RequestInit) => {
       expect(url).toBe(BROWSE_API);
       return browseApiResponse([
         { name: "Fresh & Chilled", categoryId: "301134", expectedResults: 3527, hiddenInNav: false },
@@ -55,7 +55,7 @@ describe("getCategoryNavigation", () => {
   });
 
   it("passes a provided categoryId to the browse API", async () => {
-    const fetchMock = vi.fn(async () => browseApiResponse([
+    const fetchMock = vi.fn(async (_url: string, _init: RequestInit) => browseApiResponse([
       { name: "Bread", categoryId: "300121", expectedResults: 105, hiddenInNav: false },
     ]));
     vi.stubGlobal("fetch", fetchMock);
