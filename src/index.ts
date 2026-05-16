@@ -15,6 +15,7 @@ import { DeniedError } from "./rate-limiter.js";
 import { dispatchTrolleyTool, isTrolleyTool } from "./trolley-tools.js";
 import { dispatchOrderTool, isOrderTool } from "./order-tools.js";
 import { dispatchAccountTool, isAccountTool } from "./account-tools.js";
+import { dispatchSlotTool, isSlotTool } from "./slot-tools.js";
 
 const VERSION = "0.1.0";
 const SERVER_NAME = "waitrose-mcp";
@@ -412,6 +413,100 @@ function createMcpServer(): Server {
           "List active Waitrose marketing campaigns (promotional periods with start/end dates). Requires authentication.",
         inputSchema: { type: "object", properties: {} },
       },
+      {
+        name: "get_current_slot",
+        description:
+          "Get the currently booked delivery or collection slot. Returns null if no slot is booked. Requires authentication.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            postcode: {
+              type: "string",
+              description: "Postcode to check slot availability for (optional; defaults to account address)",
+            },
+          },
+        },
+      },
+      {
+        name: "list_slot_dates",
+        description:
+          "List available dates with delivery or collection slots. Returns date IDs and day-of-week labels. Use list_slot_days to get the actual time windows for a date. Requires authentication.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            slotType: {
+              type: "string",
+              enum: ["DELIVERY", "COLLECTION"],
+              description: "Whether to list delivery or collection slots",
+            },
+            branchId: {
+              type: "string",
+              description: "Branch ID (optional; defaults to the account's default branch)",
+            },
+            addressId: {
+              type: "string",
+              description: "Delivery address ID (optional; for delivery slots)",
+            },
+          },
+          required: ["slotType"],
+        },
+      },
+      {
+        name: "list_slot_days",
+        description:
+          "List available time windows for a given date. Returns slot IDs, start/end times, status, and charge. Pass a slot ID from this response to book_slot. Requires authentication.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            slotType: {
+              type: "string",
+              enum: ["DELIVERY", "COLLECTION"],
+              description: "Whether to list delivery or collection slots",
+            },
+            fromDate: {
+              type: "string",
+              description: "Date to fetch slots from, ISO 8601 format (e.g. 2026-05-14)",
+            },
+            branchId: {
+              type: "string",
+              description: "Branch ID (optional; defaults to the account's default branch)",
+            },
+            addressId: {
+              type: "string",
+              description: "Delivery address ID (optional; for delivery slots)",
+            },
+          },
+          required: ["slotType", "fromDate"],
+        },
+      },
+      {
+        name: "book_slot",
+        description:
+          "Reserve a Waitrose delivery or collection window. **Commits Douglas to a slot.** Use only when the user has confirmed the specific slot. Slots are scarce; do not call speculatively. Requires authentication.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            slotId: {
+              type: "string",
+              description: "Slot ID from list_slot_days",
+            },
+            slotType: {
+              type: "string",
+              enum: ["DELIVERY", "COLLECTION"],
+              description: "Must match the slot type of the chosen slot",
+            },
+            addressId: {
+              type: "string",
+              description: "Delivery address ID (optional; for delivery slots)",
+            },
+            confirm: {
+              type: "boolean",
+              description: "Must be true — explicit acknowledgement that this reserves a slot",
+            },
+          },
+          required: ["slotId", "slotType", "confirm"],
+        },
+      },
     ],
   }));
 
@@ -528,6 +623,11 @@ function createMcpServer(): Server {
           }
           if (isAccountTool(toolName)) {
             const data = await dispatchAccountTool(client, toolName, args);
+            result = { content: [{ type: "text", text: safeJson(data) }] };
+            break;
+          }
+          if (isSlotTool(toolName)) {
+            const data = await dispatchSlotTool(client, toolName, args);
             result = { content: [{ type: "text", text: safeJson(data) }] };
             break;
           }
