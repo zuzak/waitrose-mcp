@@ -442,17 +442,11 @@ export interface FavouriteCategory {
 
 /** Search results response */
 export interface SearchResponse {
-  /** Products matching the search */
   products: SearchProduct[];
-  /** Total number of matching products */
   totalMatches: number;
-  /** Favourite categories (for logged-in users) */
   favouriteCategories?: FavouriteCategory[];
-  /** Personalisation information */
-  personalisation?: {
-    experimentId?: string;
-    variant?: string;
-  };
+  personalisation?: { experimentId?: string; variant?: string };
+  subCategories?: RawSubCategory[];
 }
 
 /** Product details from batch lookup by line numbers */
@@ -480,6 +474,22 @@ export interface CategoryInfo {
   productCount?: number;
 }
 
+/** Sub-category entry returned by getCategoryNavigation. */
+export interface CategoryNavEntry {
+  /** Display name as shown on waitrose.com (e.g. "Fresh & Chilled"). */
+  name: string;
+  /** Numeric Waitrose category id — pass to list_categories to drill in, or to browse_products. */
+  categoryId: string;
+  /** Approximate number of products listed under this category. */
+  productCount: number;
+}
+
+interface RawSubCategory {
+  name: string;
+  categoryId: string;
+  expectedResults?: number;
+  hiddenInNav?: boolean;
+}
 
 // ============================================================================
 // API Client
@@ -604,9 +614,9 @@ export class WaitroseClient {
       totalMatches: number;
       productsInResultset?: number;
       componentsAndProducts?: Array<{ searchProduct?: SearchProduct }>;
+      subCategories?: RawSubCategory[];
     };
 
-    // Map the raw response to our cleaner SearchResponse type
     const products: SearchProduct[] = [];
     if (raw.componentsAndProducts) {
       for (const item of raw.componentsAndProducts) {
@@ -620,6 +630,7 @@ export class WaitroseClient {
     return {
       products,
       totalMatches: raw.totalMatches,
+      subCategories: raw.subCategories,
     };
   }
 
@@ -1079,6 +1090,23 @@ export class WaitroseClient {
     });
   }
 
+  async getCategoryNavigation(categoryId: string = "10051"): Promise<CategoryNavEntry[]> {
+    const raw = await this.restApi("browse", {
+      customerSearchRequest: {
+        queryParams: { category: categoryId, start: 0, size: 1, sortBy: "RELEVANCE" },
+      },
+    });
+
+    const subs = raw.subCategories;
+    if (!subs?.length) {
+      console.info("[Waitrose] getCategoryNavigation: no subcategories returned for categoryId=%s", categoryId);
+      return [];
+    }
+
+    return subs
+      .filter(s => !s.hiddenInNav)
+      .map(s => ({ name: s.name, categoryId: s.categoryId, productCount: s.expectedResults ?? 0 }));
+  }
 
   /**
    * Get product details by line numbers
